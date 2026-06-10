@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+/* SyncDoc — 화이트 모드 고정, 플랫·미니멀 (스펙 §UI) */
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,15 +13,92 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family:
+    var(--font-geist-sans),
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    sans-serif;
+}
+
+/* 마크다운 본문 최소 스타일 (components/Markdown.tsx) */
+.markdown-body {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: #1f2937;
+  overflow-wrap: break-word;
+}
+.markdown-body > * + * {
+  margin-top: 0.6em;
+}
+.markdown-body h1 {
+  font-size: 1.35em;
+  font-weight: 600;
+}
+.markdown-body h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+}
+.markdown-body h3,
+.markdown-body h4 {
+  font-size: 1.05em;
+  font-weight: 600;
+}
+.markdown-body ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.markdown-body ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.markdown-body li + li {
+  margin-top: 0.2em;
+}
+.markdown-body code {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.85em;
+}
+.markdown-body pre {
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-body blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 0.9em;
+  color: #6b7280;
+}
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #e5e7eb;
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+.markdown-body th {
+  background: #f9fafb;
+  font-weight: 600;
+}
+.markdown-body a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid #e5e7eb;
 }
