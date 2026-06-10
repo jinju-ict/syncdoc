@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { getSession } from "@/lib/session";
 import * as repo from "@/lib/repo";
-import { translate } from "@/lib/ai";
+import { translate, suggest } from "@/lib/ai";
+import type { SuggestResult } from "@/lib/ai";
 
 async function requireSession() {
   const session = await getSession();
@@ -59,6 +60,29 @@ export async function sendBlock(
   revalidatePath(`/doc/${docId}`);
   after(() => runTranslation(sent));
   return { ok: true };
+}
+
+/**
+ * AI 개선 제안 (초안 단계, 비차단 — 보내기와 독립):
+ * 제안 시점의 초안을 먼저 저장(upsert)해 보존한 뒤 suggest() 호출.
+ * 수락 플로우는 클라이언트에서 선택 옵션을 초안 텍스트에 병합 →
+ * 기존 saveDraft/sendBlock 경로를 그대로 사용한다 (작성자가 확인 후 보내기).
+ */
+export async function requestSuggestions(
+  docId: number,
+  draftMd: string
+): Promise<SuggestResult> {
+  const session = await requireSession();
+  if (draftMd.trim().length === 0) {
+    return { ok: false, error: "빈 초안에는 제안을 생성할 수 없습니다." };
+  }
+  try {
+    repo.saveDraft(docId, { id: session.uid, role: session.role }, draftMd);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  // suggest는 throw하지 않는 규약 — {ok:false} 그대로 클라이언트에 전달
+  return suggest(draftMd);
 }
 
 /** 번역 재시도: failed 또는 2분 초과 pending만 통과 (조건부 UPDATE로 경합 무해화) */

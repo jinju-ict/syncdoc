@@ -1,17 +1,24 @@
 "use client";
 
 /**
- * 초안 에디터 — 마크다운 textarea + 임시 저장 + '보내기'(잠금+번역 트리거).
+ * 초안 에디터 — 마크다운 textarea + 임시 저장 + '보내기'(잠금+번역 트리거)
+ * + AI 개선 제안 패널(객관식, 비차단).
+ *
  * draft는 작성자 본인에게만 보인다 (서버 조회 계층에서 강제).
  *
- * NOTE(worker-ai): AI 개선 제안 패널은 아래 [AI-SUGGEST-PANEL-SLOT] 위치에
- * 추가할 것 — 객관식 옵션 제시 → 수락 시 setMd로 초안 반영 → 보내기.
+ * AI 제안 플로우: 'AI 제안 받기'(보내기와 독립) → 옵션 카드 렌더 →
+ * '초안에 반영' 클릭 시 해당 텍스트를 textarea에 병합(setMd) →
+ * 작성자가 자유 수정 후 일반 보내기 플로우로 확정.
  */
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Role } from "@/lib/repo";
-import { saveDraft, sendBlock } from "@/app/doc/[id]/actions";
+import {
+  saveDraft,
+  sendBlock,
+  requestSuggestions,
+} from "@/app/doc/[id]/actions";
 
 const roleLabel: Record<Role, string> = {
   planner: "기획팀",
@@ -33,6 +40,12 @@ export default function DraftEditor({
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
+  // --- AI 제안 상태 (보내기와 독립 — 비차단) ---
+  const [suggestions, setSuggestions] = useState<string[] | null>(null);
+  const [appliedOptions, setAppliedOptions] = useState<Set<number>>(new Set());
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+
   const handleSave = () => {
     setError(null);
     startTransition(async () => {
@@ -52,11 +65,45 @@ export default function DraftEditor({
       if (result.ok) {
         setMd("");
         setSavedAt(null);
+        setSuggestions(null);
+        setAppliedOptions(new Set());
+        setSuggestError(null);
         router.refresh();
       } else {
         setError(result.error);
       }
     });
+  };
+
+  const handleRequestSuggestions = async () => {
+    setSuggestError(null);
+    if (md.trim().length === 0) {
+      setSuggestError("초안을 먼저 작성하세요.");
+      return;
+    }
+    setSuggestLoading(true);
+    try {
+      const result = await requestSuggestions(docId, md);
+      if (result.ok) {
+        setSuggestions(result.options);
+        setAppliedOptions(new Set());
+      } else {
+        setSuggestError(result.error);
+      }
+    } catch (e) {
+      setSuggestError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSuggestLoading(false);
+    }
+  };
+
+  /** 선택한 옵션 텍스트를 초안에 병합 — 작성자는 이후 자유롭게 수정 가능 */
+  const handleApplyOption = (index: number, option: string) => {
+    if (appliedOptions.has(index)) return;
+    setMd((prev) =>
+      prev.trim().length === 0 ? option : `${prev.trimEnd()}\n\n${option}`
+    );
+    setAppliedOptions((prev) => new Set(prev).add(index));
   };
 
   return (
@@ -80,9 +127,82 @@ export default function DraftEditor({
           disabled={isPending}
         />
 
-        {/* [AI-SUGGEST-PANEL-SLOT]
-            worker-ai: AI 개선 제안 패널(객관식)을 여기에 추가.
-            suggest(md) 호출 → 옵션 렌더 → 수락 시 setMd(반영된 초안). */}
+        {/* --- AI 개선 제안 패널 (객관식, 비차단) --- */}
+        <div className="mt-3 rounded-md border border-indigo-100 bg-indigo-50/50 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-indigo-700">
+              AI 개선 제안
+            </span>
+            <div className="flex items-center gap-2">
+              {suggestions && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuggestions(null);
+                    setAppliedOptions(new Set());
+                    setSuggestError(null);
+                  }}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  닫기
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleRequestSuggestions}
+                disabled={suggestLoading}
+                className="rounded-md border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+              >
+                {suggestLoading
+                  ? "제안 생성 중…"
+                  : suggestions
+                    ? "다시 제안 받기"
+                    : "AI 제안 받기"}
+              </button>
+            </div>
+          </div>
+
+          {suggestError && (
+            <p className="mt-2 text-xs text-red-600">{suggestError}</p>
+          )}
+
+          {suggestions && (
+            <ul className="mt-2 space-y-2">
+              {suggestions.map((option, i) => {
+                const applied = appliedOptions.has(i);
+                return (
+                  <li
+                    key={i}
+                    className={`rounded-md border px-3 py-2 text-sm ${
+                      applied
+                        ? "border-green-200 bg-green-50 text-gray-500"
+                        : "border-gray-200 bg-white text-gray-800"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="whitespace-pre-wrap">{option}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyOption(i, option)}
+                        disabled={applied}
+                        className="shrink-0 rounded border border-indigo-200 bg-white px-2 py-0.5 text-xs text-indigo-700 hover:bg-indigo-50 disabled:cursor-default disabled:border-green-200 disabled:text-green-700"
+                      >
+                        {applied ? "반영됨 ✓" : "초안에 반영"}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {suggestions && (
+            <p className="mt-2 text-[11px] text-gray-400">
+              반영된 제안은 초안 텍스트에 추가됩니다. 자유롭게 수정한 뒤
+              보내기를 누르세요.
+            </p>
+          )}
+        </div>
 
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 

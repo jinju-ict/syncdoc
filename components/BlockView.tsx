@@ -34,6 +34,9 @@ export default function BlockView({
 
   const isOwnRole = block.authorRole === viewerRole;
   const translation = block.translation;
+  // pending 행은 잠금 트랜잭션에서 선삽입되므로 항상 존재해야 하지만,
+  // 만약 행이 없으면 failed로 취급(원문 + 재시도)해 히스토리를 막지 않는다.
+  const translationStatus = translation?.status ?? "failed";
 
   const handleRetry = () => {
     startTransition(async () => {
@@ -48,7 +51,8 @@ export default function BlockView({
         <span className="font-mono text-xs text-gray-500">
           {block.versionTag}
         </span>
-        <span className="text-xs text-gray-400">
+        <span className="flex items-center gap-2 text-xs text-gray-400">
+          {!isOwnRole && <TranslationBadge status={translationStatus} />}
           {roleLabel[block.authorRole]} 작성 · 잠김
         </span>
       </header>
@@ -60,7 +64,7 @@ export default function BlockView({
         ) : (
           // 상대 직군 블록 → 번역본 (상태별 표시)
           <TranslatedBody
-            status={translation?.status ?? "failed"}
+            status={translationStatus}
             translatedMd={translation?.translatedMd ?? null}
             sourceMd={block.sourceMd}
             onRetry={handleRetry}
@@ -89,6 +93,33 @@ export default function BlockView({
         </footer>
       )}
     </article>
+  );
+}
+
+/** 헤더용 번역 상태 배지 — 세 상태(pending/ok/failed)를 한눈에 구분 */
+function TranslationBadge({
+  status,
+}: {
+  status: "pending" | "ok" | "failed";
+}) {
+  if (status === "pending") {
+    return (
+      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600">
+        <span className="mr-1 inline-block animate-pulse">●</span>번역 중…
+      </span>
+    );
+  }
+  if (status === "ok") {
+    return (
+      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600">
+        AI 번역본
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+      번역 실패
+    </span>
   );
 }
 
