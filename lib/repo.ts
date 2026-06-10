@@ -438,3 +438,46 @@ export function setApproval(docId: number, role: Role): boolean {
   const doc = getDocument(docId);
   return Boolean(doc?.approvalPlannerAt && doc?.approvalDeveloperAt);
 }
+
+/** abstract() 입력용 — 잠긴 블록의 원문·작성 직군·버전 태그만 시간순으로 */
+export function getLockedBlocksForAbstract(
+  docId: number
+): { sourceMd: string; authorRole: Role; versionTag: string | null }[] {
+  return sqlite
+    .prepare(
+      `SELECT source_md AS sourceMd, author_role AS authorRole,
+              version_tag AS versionTag
+       FROM blocks
+       WHERE doc_id = ? AND status = 'locked'
+       ORDER BY seq ASC`
+    )
+    .all(docId) as {
+    sourceMd: string;
+    authorRole: Role;
+    versionTag: string | null;
+  }[];
+}
+
+/**
+ * 조건부 INSERT — sinceTs(최종 승인 시각, ISO) 이후 생성된 abstracts 행이 아직
+ * 없을 때만 새 히스토리 행을 추가한다 (양측 동시 재시도 경합 시 중복 행 무해화).
+ * 추가되면 새 행 id, 이미 있으면 null 반환. 기존 행은 절대 수정하지 않는다
+ * (다행 히스토리 — append-only).
+ */
+export function addAbstractIfMissingSince(
+  docId: number,
+  sinceTs: string,
+  abstractMd: string,
+  tocMd: string
+): number | null {
+  const result = sqlite
+    .prepare(
+      `INSERT INTO abstracts (doc_id, abstract_md, toc_md, generated_at)
+       SELECT ?, ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM abstracts WHERE doc_id = ? AND generated_at >= ?
+       )`
+    )
+    .run(docId, abstractMd, tocMd, now(), docId, sinceTs);
+  return result.changes > 0 ? Number(result.lastInsertRowid) : null;
+}

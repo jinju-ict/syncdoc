@@ -9,7 +9,8 @@
  *   불확실 항목은 `> ⚠️ 확인 필요:` 인용 블록으로 표기. 직군별 시스템 프롬프트 2종.
  * - suggest: 객관식 옵션을 tool-use(강제 tool_choice + JSON schema)로 받아
  *   zod로 검증 — 파싱 실패 시 {ok:false}.
- * - abstract: 전체 잠금 히스토리 → Abstract + TOC 마크다운 (Wave3 worker 소유 — STUB 유지)
+ * - abstract: 전체 잠금 히스토리 → 프로젝트 "최종 상태(Current State)"의
+ *   Abstract + TOC 마크다운. suggest와 동일한 강제 tool-use + zod 검증.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -215,13 +216,124 @@ export async function suggest(draftMd: string): Promise<SuggestResult> {
 }
 
 // ---------------------------------------------------------------------------
-// abstract — Wave3 worker 소유 (STUB 유지 — 시그니처 변경 금지)
+// abstract — 전체 잠금 히스토리 → Abstract + TOC (강제 tool-use + zod 검증)
 // ---------------------------------------------------------------------------
+
+const ABSTRACT_TOOL_NAME = "submit_abstract";
+
+const ABSTRACT_ROLE_LABEL: Record<Role, string> = {
+  planner: "기획자",
+  developer: "개발자",
+};
+
+const ABSTRACT_SYSTEM = `너는 기획자↔개발자 협업 문서의 서기다.
+프로젝트 문서의 전체 히스토리(시간순으로 잠긴 블록들)를 분석해, 문서 최상단에
+고정될 **Abstract(요약 표지)**와 **TOC(목차)**를 ${ABSTRACT_TOOL_NAME} 도구로만
+제출한다.
+
+[Abstract 작성 규칙]
+- 히스토리의 사건 나열이 아니라 프로젝트의 "최종 상태(Current State)"를 보여준다:
+  지금까지의 합의 결과로 이 프로젝트가 무엇이며, 무엇이 어떻게 결정되었는지 요약한다.
+- 논의가 진행되며 번복·구체화된 사항은 가장 나중 블록의 내용을 최종 상태로 채택한다.
+- 한국어 마크다운으로 작성한다.
+
+[TOC 작성 규칙]
+- 히스토리 블록들의 주제 흐름을 마크다운 목록 형태의 목차로 정리한다.
+- 각 항목에는 근거가 된 블록의 버전 태그를 괄호로 병기한다
+  (예: \`- 결제 플로우 확정 ([2026-06-10 v3 - 개발팀])\`).
+
+[절대 규칙 — 무창작]
+1. 원문 블록들에 없는 요구사항·수치·기한·결정·기능을 절대 추가하지 않는다.
+   원문의 수치·단위·고유명사·조건은 한 글자도 바꾸지 말고 그대로 보존한다.
+2. 원문에 근거가 없어 불확실한 사항은 본문에 섞어 단정하지 말고, 반드시
+   "> ⚠️ 확인 필요: (확인할 질문이나 내용)" 인용 블록으로만 명시한다.
+3. 인사말·서두·메타 설명 금지 — 도구 입력의 두 필드에 마크다운 본문만 담는다.`;
+
+const abstractSchema = z.object({
+  abstract_md: z.string().trim().min(1),
+  toc_md: z.string().trim().min(1),
+});
 
 /** 전체 잠금 블록 히스토리 → Abstract + TOC */
 export async function abstract(
   blocks: { sourceMd: string; authorRole: Role; versionTag: string | null }[]
 ): Promise<AbstractResult> {
-  void blocks;
-  return { ok: false, error: "AI not yet implemented" };
+  try {
+    if (blocks.length === 0)
+      return { ok: false, error: "분석할 잠긴 블록이 없습니다." };
+
+    const client = getClient();
+    if (!client) return { ok: false, error: "API key not configured" };
+
+    const history = blocks
+      .map(
+        (b, i) =>
+          `### 블록 ${i + 1} ${b.versionTag ?? ""} — ${
+            ABSTRACT_ROLE_LABEL[b.authorRole]
+          } 작성\n\n${b.sourceMd}`
+      )
+      .join("\n\n---\n\n");
+
+    const response = await client.messages.create({
+      model: getModel(),
+      max_tokens: 16000,
+      system: ABSTRACT_SYSTEM,
+      // 강제 tool_choice — 항상 {abstract_md, toc_md} 구조로만 응답
+      tool_choice: {
+        type: "tool",
+        name: ABSTRACT_TOOL_NAME,
+        disable_parallel_tool_use: true,
+      },
+      tools: [
+        {
+          name: ABSTRACT_TOOL_NAME,
+          description:
+            "전체 히스토리 분석 결과인 Abstract(요약 표지)와 TOC(목차) 마크다운을 제출한다.",
+          strict: true,
+          input_schema: {
+            type: "object",
+            properties: {
+              abstract_md: {
+                type: "string",
+                description:
+                  "프로젝트의 최종 상태(Current State)를 보여주는 요약 표지. 한국어 마크다운 본문만.",
+              },
+              toc_md: {
+                type: "string",
+                description:
+                  "히스토리 주제 흐름의 목차. 마크다운 목록, 각 항목에 버전 태그 병기.",
+              },
+            },
+            required: ["abstract_md", "toc_md"],
+            additionalProperties: false,
+          },
+        },
+      ],
+      messages: [
+        {
+          role: "user",
+          content: `다음은 문서의 전체 잠금 히스토리(시간순)다. 규칙에 따라 Abstract와 TOC를 제출하라:\n\n${history}`,
+        },
+      ],
+    });
+
+    const toolUse = response.content.find(
+      (b): b is Anthropic.ToolUseBlock =>
+        b.type === "tool_use" && b.name === ABSTRACT_TOOL_NAME
+    );
+    if (!toolUse)
+      return { ok: false, error: "표지 도구 호출이 응답에 없습니다." };
+
+    const parsed = abstractSchema.safeParse(toolUse.input);
+    if (!parsed.success)
+      return { ok: false, error: "표지 응답 형식이 올바르지 않습니다." };
+
+    return {
+      ok: true,
+      abstractMd: parsed.data.abstract_md.trim(),
+      tocMd: parsed.data.toc_md.trim(),
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
 }
