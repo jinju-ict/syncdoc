@@ -15,9 +15,10 @@ export function proxy(request: NextRequest) {
   if (!hasSession && !isLoginPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  if (hasSession && isLoginPage) {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
+  // 쿠키가 있어도 /login 접근은 허용한다. 쿠키 존재만으로 /로 되돌리면
+  // 위조·만료된 쿠키가 남아 있을 때 /login → / → /login 무한 루프가 생긴다
+  // (서명 검증은 getSession()만 수행 가능). 유효한 세션이면 로그인 액션이
+  // 쿠키를 덮어쓰므로 로그인 폼 노출은 무해하다.
   return NextResponse.next();
 }
 
