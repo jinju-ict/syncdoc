@@ -3,7 +3,9 @@
 /**
  * 잠긴 블록 렌더 (회색 배경 + 버전 태그 = 읽기전용 시각 처리).
  * - 내 직군 블록: 원문 그대로 표시
- * - 상대 직군 블록: 번역본(pending/ok/failed 상태별) + '원문 보기' 토글 + 실패 시 '재시도'
+ * - 상대 직군 블록: 번역본(pending/ok/failed 상태별) + 원문 패널(기본 펼침, 접기 가능)
+ *   — 원문과 번역본을 항상 함께 대조할 수 있게 한다. 번역 실패 시에는 본문이
+ *   이미 원문이므로 원문 패널은 생략한다.
  *
  * NOTE(worker-ai): 번역 상태 UI를 다듬을 때 이 파일만 수정하면 된다.
  */
@@ -28,7 +30,8 @@ export default function BlockView({
   viewerRole: Role;
   docId: number;
 }) {
-  const [showSource, setShowSource] = useState(false);
+  // 원문 패널 기본 펼침 — 번역본과 원문을 같이 본다 (접기는 사용자 선택)
+  const [showSource, setShowSource] = useState(true);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -73,14 +76,15 @@ export default function BlockView({
         )}
       </div>
 
-      {!isOwnRole && (
+      {/* 원문 패널 — failed는 본문이 이미 원문이므로 생략 */}
+      {!isOwnRole && translationStatus !== "failed" && (
         <footer className="border-t border-gray-200 px-4 py-2">
           <button
             type="button"
             onClick={() => setShowSource((v) => !v)}
             className="text-xs text-gray-500 underline-offset-2 hover:text-gray-800 hover:underline"
           >
-            {showSource ? "원문 닫기" : "원문 보기"}
+            {showSource ? "원문 접기" : "원문 보기"}
           </button>
           {showSource && (
             <div className="mt-2 rounded-md border border-gray-200 bg-white px-3 py-2">

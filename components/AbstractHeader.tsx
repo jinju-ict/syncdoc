@@ -35,12 +35,15 @@ export default function AbstractHeader({
   approvalDeveloperAt,
   docId,
   viewerRole,
+  readOnly = false,
 }: {
   abstract: AbstractInfo | null;
   approvalPlannerAt: string | null;
   approvalDeveloperAt: string | null;
   docId: number;
   viewerRole: Role;
+  /** 보관된 문서 — 동의/재시도 등 모든 변경 컨트롤 숨김 */
+  readOnly?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -88,7 +91,7 @@ export default function AbstractHeader({
             ✅ 합의됨
           </span>
         )}
-        {!viewerApprovedAt && (
+        {!viewerApprovedAt && !readOnly && (
           <button
             type="button"
             onClick={() => run(() => approveDocument(docId))}
@@ -105,7 +108,7 @@ export default function AbstractHeader({
       </div>
 
       {/* 양측 합의됐으나 표지 생성 실패 → 재시도 (승인 롤백 없음, 양측 누구나) */}
-      {needsRetry && (
+      {needsRetry && !readOnly && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
           <span className="text-xs text-amber-700">
             양측이 합의했지만 Abstract/TOC 표지가 아직 생성되지 않았습니다.

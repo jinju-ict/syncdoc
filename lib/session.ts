@@ -12,7 +12,7 @@ export const SESSION_COOKIE = "syncdoc_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7일
 
 const SECRET =
-  process.env.SESSION_SECRET ?? "syncdoc-dev-secret-do-not-use-in-prod";
+  process.env.SESSION_SECRET || "syncdoc-dev-secret-do-not-use-in-prod";
 
 export type Session = {
   uid: number;

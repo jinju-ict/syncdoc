@@ -35,11 +35,17 @@ yarn-error.log*
 !.env.local.example
 .env.local
 
-# sqlite database
+# sqlite database (백업 파일 포함 — DB는 어떤 형태로도 커밋하지 않는다)
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+*.db.bak-*
+*.db-wal.bak-*
+*.db-shm.bak-*
+
+# OMC plugin state
+.omc/
 
 # vercel
 .vercel

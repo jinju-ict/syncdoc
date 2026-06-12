@@ -3,12 +3,19 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 export type Role = "planner" | "developer";
 export type BlockStatus = "draft" | "locked";
 export type TranslationStatus = "pending" | "ok" | "failed";
+/** 사용자 숙련도 — 번역이 독자의 배경지식 수준에 맞춰 표현을 조절한다 */
+export type ExpertiseLevel = "beginner" | "intermediate" | "expert";
+/** 문서 수명주기 — archived는 문서 전체 읽기 전용 (삭제 기능은 없다 — 내용 추적 보장) */
+export type DocumentStatus = "active" | "archived";
 
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["planner", "developer"] }).notNull(),
+  level: text("level", { enum: ["beginner", "intermediate", "expert"] })
+    .notNull()
+    .default("intermediate"),
 });
 
 export const documents = sqliteTable("documents", {
@@ -16,6 +23,11 @@ export const documents = sqliteTable("documents", {
   title: text("title").notNull(),
   approvalPlannerAt: text("approval_planner_at"),
   approvalDeveloperAt: text("approval_developer_at"),
+  status: text("status", { enum: ["active", "archived"] })
+    .notNull()
+    .default("active"),
+  archivedAt: text("archived_at"),
+  createdAt: text("created_at"),
 });
 
 export const blocks = sqliteTable("blocks", {

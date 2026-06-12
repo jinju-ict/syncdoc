@@ -12,14 +12,18 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('planner','developer'))
+  role TEXT NOT NULL CHECK (role IN ('planner','developer')),
+  level TEXT NOT NULL DEFAULT 'intermediate' CHECK (level IN ('beginner','intermediate','expert'))
 );
 
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   approval_planner_at TEXT,
-  approval_developer_at TEXT
+  approval_developer_at TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  archived_at TEXT,
+  created_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS blocks (
@@ -85,13 +89,59 @@ BEGIN
 END;
 `;
 
+// 주의: documents.status를 참조하므로 migrate()(컬럼 보강) 이후에 생성해야 한다.
+const POST_MIGRATE_DDL = `
+-- 보관 문서 읽기 전용 (repo 가드의 DB 레벨 2중 방어): 새 블록 추가 차단.
+-- 기존 블록의 잠금 불변식 트리거는 그대로 유지된다.
+CREATE TRIGGER IF NOT EXISTS blocks_no_insert_on_archived
+BEFORE INSERT ON blocks
+WHEN (SELECT status FROM documents WHERE id = NEW.doc_id) = 'archived'
+BEGIN
+  SELECT RAISE(ABORT, 'archived document is read-only');
+END;
+`;
+
 function createConnection() {
   const sqlite = new Database(DB_PATH);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
   sqlite.exec(DDL);
+  migrate(sqlite);
+  sqlite.exec(POST_MIGRATE_DDL);
   seed(sqlite);
   return sqlite;
+}
+
+/** CREATE TABLE IF NOT EXISTS는 기존 테이블을 바꾸지 않으므로, 추가 컬럼은 여기서 멱등 ALTER */
+function migrate(sqlite: Database.Database) {
+  const userCols = sqlite.prepare("PRAGMA table_info(users)").all() as {
+    name: string;
+  }[];
+  if (!userCols.some((c) => c.name === "level")) {
+    sqlite.exec(
+      "ALTER TABLE users ADD COLUMN level TEXT NOT NULL DEFAULT 'intermediate' CHECK (level IN ('beginner','intermediate','expert'))"
+    );
+  }
+
+  const docCols = sqlite.prepare("PRAGMA table_info(documents)").all() as {
+    name: string;
+  }[];
+  const hasDocCol = (n: string) => docCols.some((c) => c.name === n);
+  if (!hasDocCol("status")) {
+    sqlite.exec(
+      "ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived'))"
+    );
+  }
+  if (!hasDocCol("archived_at")) {
+    sqlite.exec("ALTER TABLE documents ADD COLUMN archived_at TEXT");
+  }
+  if (!hasDocCol("created_at")) {
+    // ADD COLUMN의 DEFAULT는 상수만 허용 — 기존 행은 별도 backfill
+    sqlite.exec("ALTER TABLE documents ADD COLUMN created_at TEXT");
+    sqlite
+      .prepare("UPDATE documents SET created_at = ? WHERE created_at IS NULL")
+      .run(new Date().toISOString());
+  }
 }
 
 function seed(sqlite: Database.Database) {
@@ -102,8 +152,10 @@ function seed(sqlite: Database.Database) {
   insertUser.run("planner", hashPassword("demo1234"), "planner");
   insertUser.run("developer", hashPassword("demo1234"), "developer");
   sqlite
-    .prepare("INSERT OR IGNORE INTO documents (id, title) VALUES (1, ?)")
-    .run("샘플 프로젝트 문서");
+    .prepare(
+      "INSERT OR IGNORE INTO documents (id, title, created_at) VALUES (1, ?, ?)"
+    )
+    .run("샘플 프로젝트 문서", new Date().toISOString());
 }
 
 // Next.js dev HMR에서 커넥션이 중복 생성되지 않도록 globalThis에 캐시

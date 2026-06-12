@@ -20,7 +20,9 @@ async function requireSession() {
  */
 async function runTranslation(sent: repo.SentBlock): Promise<void> {
   try {
-    const result = await translate(sent.sourceMd, sent.targetRole);
+    // 독자(상대 역할 사용자)의 현재 레벨을 호출 시점에 조회해 표현 수준을 맞춘다
+    const targetLevel = repo.getLevelForRole(sent.targetRole);
+    const result = await translate(sent.sourceMd, sent.targetRole, targetLevel);
     repo.recordTranslation(
       sent.blockId,
       result.ok ? { ok: true, md: result.md } : { ok: false, error: result.error }
@@ -83,6 +85,35 @@ export async function requestSuggestions(
   }
   // suggest는 throw하지 않는 규약 — {ok:false} 그대로 클라이언트에 전달
   return suggest(draftMd);
+}
+
+/**
+ * 내 숙련도 레벨 변경 — 이후 새로 생성되는 번역(새 블록·재시도)부터 적용된다.
+ * 이미 완료(ok)된 번역은 다시 생성하지 않는다 (비용·히스토리 보존).
+ */
+export async function setMyLevel(docId: number, level: string): Promise<void> {
+  const session = await requireSession();
+  if (!repo.isExpertiseLevel(level)) return; // 화이트리스트 외 입력은 무시
+  repo.setUserLevel(session.uid, level);
+  revalidatePath(`/doc/${docId}`);
+}
+
+/**
+ * 문서 보관/해제 — 상태 전환만. 모든 내용(블록·번역·댓글·Abstract)은 영구 보존되어
+ * 추적 가능하다. 삭제 액션은 존재하지 않는다.
+ */
+export async function archiveDocument(docId: number): Promise<void> {
+  await requireSession();
+  repo.setDocumentArchived(docId, true);
+  revalidatePath(`/doc/${docId}`);
+  revalidatePath("/");
+}
+
+export async function unarchiveDocument(docId: number): Promise<void> {
+  await requireSession();
+  repo.setDocumentArchived(docId, false);
+  revalidatePath(`/doc/${docId}`);
+  revalidatePath("/");
 }
 
 /** 번역 재시도: failed 또는 2분 초과 pending만 통과 (조건부 UPDATE로 경합 무해화) */

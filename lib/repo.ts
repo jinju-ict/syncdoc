@@ -13,9 +13,20 @@
  */
 
 import { sqlite } from "./db";
-import type { Role, TranslationStatus } from "./schema";
+import type {
+  DocumentStatus,
+  ExpertiseLevel,
+  Role,
+  TranslationStatus,
+} from "./schema";
 
-export type { Role, BlockStatus, TranslationStatus } from "./schema";
+export type {
+  DocumentStatus,
+  ExpertiseLevel,
+  Role,
+  BlockStatus,
+  TranslationStatus,
+} from "./schema";
 
 // ---------------------------------------------------------------------------
 // 타입 (page.tsx → 컴포넌트 props로 그대로 전달되는 형태)
@@ -26,6 +37,7 @@ export type UserRow = {
   username: string;
   passwordHash: string;
   role: Role;
+  level: ExpertiseLevel;
 };
 
 export type DocumentInfo = {
@@ -33,6 +45,15 @@ export type DocumentInfo = {
   title: string;
   approvalPlannerAt: string | null;
   approvalDeveloperAt: string | null;
+  status: DocumentStatus;
+  archivedAt: string | null;
+  createdAt: string | null;
+};
+
+/** 홈 문서 목록 한 줄 — 목록 화면이 필요로 하는 요약 정보 */
+export type DocumentListItem = DocumentInfo & {
+  blockCount: number;
+  lastLockedAt: string | null;
 };
 
 export type TranslationInfo = {
@@ -121,10 +142,46 @@ export const oppositeRole = (role: Role): Role =>
 export function getUserByUsername(username: string): UserRow | null {
   const row = sqlite
     .prepare(
-      "SELECT id, username, password_hash AS passwordHash, role FROM users WHERE username = ?"
+      "SELECT id, username, password_hash AS passwordHash, role, level FROM users WHERE username = ?"
     )
     .get(username) as UserRow | undefined;
   return row ?? null;
+}
+
+const LEVELS: readonly ExpertiseLevel[] = [
+  "beginner",
+  "intermediate",
+  "expert",
+] as const;
+
+export function isExpertiseLevel(v: unknown): v is ExpertiseLevel {
+  return typeof v === "string" && (LEVELS as readonly string[]).includes(v);
+}
+
+export function getUserLevel(userId: number): ExpertiseLevel {
+  const row = sqlite
+    .prepare("SELECT level FROM users WHERE id = ?")
+    .get(userId) as { level: ExpertiseLevel } | undefined;
+  return row?.level ?? "intermediate";
+}
+
+export function setUserLevel(userId: number, level: ExpertiseLevel): boolean {
+  if (!isExpertiseLevel(level)) return false;
+  const result = sqlite
+    .prepare("UPDATE users SET level = ? WHERE id = ?")
+    .run(level, userId);
+  return result.changes > 0;
+}
+
+/**
+ * 번역 독자의 레벨 — targetRole 사용자의 현재 레벨을 번역 호출 시점에 조회한다.
+ * (MVP: 역할당 사용자 1명. 다중 사용자가 되면 레벨별 번역 저장으로 확장 필요)
+ */
+export function getLevelForRole(role: Role): ExpertiseLevel {
+  const row = sqlite
+    .prepare("SELECT level FROM users WHERE role = ? ORDER BY id ASC LIMIT 1")
+    .get(role) as { level: ExpertiseLevel } | undefined;
+  return row?.level ?? "intermediate";
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +193,8 @@ export function getDocument(docId: number): DocumentInfo | null {
     .prepare(
       `SELECT id, title,
               approval_planner_at AS approvalPlannerAt,
-              approval_developer_at AS approvalDeveloperAt
+              approval_developer_at AS approvalDeveloperAt,
+              status, archived_at AS archivedAt, created_at AS createdAt
        FROM documents WHERE id = ?`
     )
     .get(docId) as DocumentInfo | undefined;
@@ -148,6 +206,62 @@ export function getFirstDocumentId(): number | null {
     .prepare("SELECT id FROM documents ORDER BY id ASC LIMIT 1")
     .get() as { id: number } | undefined;
   return row?.id ?? null;
+}
+
+/** 쓰기 경로 공용 가드 — 보관 문서에는 어떤 변경도 허용하지 않는다 (DB 트리거가 2중 방어) */
+function assertDocActive(docId: number): void {
+  const row = sqlite
+    .prepare("SELECT status FROM documents WHERE id = ?")
+    .get(docId) as { status: DocumentStatus } | undefined;
+  if (!row) throw new Error("문서를 찾을 수 없습니다.");
+  if (row.status !== "active")
+    throw new Error("보관된 문서는 읽기 전용입니다.");
+}
+
+/** 홈 목록 — 진행 중/보관 전체. 블록 수와 마지막 확정 시각 포함 */
+export function listDocuments(): DocumentListItem[] {
+  return sqlite
+    .prepare(
+      `SELECT d.id, d.title,
+              d.approval_planner_at AS approvalPlannerAt,
+              d.approval_developer_at AS approvalDeveloperAt,
+              d.status, d.archived_at AS archivedAt, d.created_at AS createdAt,
+              COUNT(b.id) AS blockCount,
+              MAX(b.locked_at) AS lastLockedAt
+       FROM documents d
+       LEFT JOIN blocks b ON b.doc_id = d.id AND b.status = 'locked'
+       GROUP BY d.id
+       ORDER BY d.status ASC, COALESCE(MAX(b.locked_at), d.created_at, '') DESC, d.id DESC`
+    )
+    .all() as DocumentListItem[];
+}
+
+export function createDocument(title: string): number {
+  const trimmed = title.trim();
+  if (trimmed.length === 0) throw new Error("문서 제목을 입력하세요.");
+  const result = sqlite
+    .prepare("INSERT INTO documents (title, created_at) VALUES (?, ?)")
+    .run(trimmed, now());
+  return Number(result.lastInsertRowid);
+}
+
+/**
+ * 보관/해제 — 상태 전환만 한다. 블록·번역·댓글·Abstract는 그대로 보존되므로
+ * 내용 추적이 항상 가능하다. 삭제 경로는 제공하지 않는다.
+ */
+export function setDocumentArchived(docId: number, archived: boolean): boolean {
+  const result = archived
+    ? sqlite
+        .prepare(
+          "UPDATE documents SET status = 'archived', archived_at = ? WHERE id = ? AND status = 'active'"
+        )
+        .run(now(), docId)
+    : sqlite
+        .prepare(
+          "UPDATE documents SET status = 'active', archived_at = NULL WHERE id = ? AND status = 'archived'"
+        )
+        .run(docId);
+  return result.changes > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +338,7 @@ export function saveDraft(
   author: { id: number; role: Role },
   md: string
 ): number {
+  assertDocActive(docId);
   const existing = getOwnDraft(docId, author.id);
   if (existing) {
     updateDraft(existing.id, author.id, md);
@@ -272,6 +387,7 @@ export function sendBlock(blockId: number, authorId: number): SentBlock {
     if (!block) throw new Error("보낼 수 있는 초안이 없습니다.");
     if (block.sourceMd.trim().length === 0)
       throw new Error("빈 초안은 보낼 수 없습니다.");
+    assertDocActive(block.docId);
 
     const maxSeq = sqlite
       .prepare(
@@ -382,11 +498,12 @@ export function addComment(
   parentId: number | null = null
 ): number {
   const block = sqlite
-    .prepare("SELECT status FROM blocks WHERE id = ?")
-    .get(blockId) as { status: string } | undefined;
+    .prepare("SELECT status, doc_id AS docId FROM blocks WHERE id = ?")
+    .get(blockId) as { status: string; docId: number } | undefined;
   if (!block) throw new Error("블록을 찾을 수 없습니다.");
   if (block.status !== "locked")
     throw new Error("댓글은 잠긴 블록에만 작성할 수 있습니다.");
+  assertDocActive(block.docId);
   if (body.trim().length === 0) throw new Error("댓글 내용을 입력하세요.");
 
   const result = sqlite
@@ -430,6 +547,7 @@ export function addAbstract(
 
 /** 역할별 승인 기록 (양측 승인 완료 여부 반환) — Wave3에서 사용 */
 export function setApproval(docId: number, role: Role): boolean {
+  assertDocActive(docId);
   const column =
     role === "planner" ? "approval_planner_at" : "approval_developer_at";
   sqlite

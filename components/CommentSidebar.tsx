@@ -56,11 +56,14 @@ export default function CommentSidebar({
   docId,
   viewerId,
   viewerRole,
+  readOnly = false,
 }: {
   blocks: TimelineBlock[];
   docId: number;
   viewerId: number;
   viewerRole: Role;
+  /** 보관된 문서 — 기존 댓글은 열람 가능, 작성/답글 폼은 숨김 */
+  readOnly?: boolean;
 }) {
   const [activeBlockId, setActiveBlockId] = useState<number | null>(null);
 
@@ -108,6 +111,7 @@ export default function CommentSidebar({
               viewerRole={viewerRole}
               active={activeBlockId === block.id}
               onSelect={() => selectBlock(block.id)}
+              readOnly={readOnly}
             />
           ))
         )}
@@ -127,6 +131,7 @@ function BlockThreadCard({
   viewerRole,
   active,
   onSelect,
+  readOnly,
 }: {
   block: TimelineBlock;
   docId: number;
@@ -134,6 +139,7 @@ function BlockThreadCard({
   viewerRole: Role;
   active: boolean;
   onSelect: () => void;
+  readOnly: boolean;
 }) {
   const [replyTo, setReplyTo] = useState<number | null>(null);
 
@@ -182,11 +188,12 @@ function BlockThreadCard({
               replyTo={replyTo}
               onReplyTo={setReplyTo}
               depth={0}
+              readOnly={readOnly}
             />
           ))}
 
-          {/* 새 댓글 폼 — 활성 블록에만 노출 */}
-          {active ? (
+          {/* 새 댓글 폼 — 활성 블록에만 노출 (보관 문서는 작성 불가) */}
+          {readOnly ? null : active ? (
             <CommentForm
               docId={docId}
               blockId={block.id}
@@ -223,6 +230,7 @@ function CommentNode({
   replyTo,
   onReplyTo,
   depth,
+  readOnly,
 }: {
   comment: CommentInfo;
   byParent: Map<number | null, CommentInfo[]>;
@@ -232,6 +240,7 @@ function CommentNode({
   replyTo: number | null;
   onReplyTo: (id: number | null) => void;
   depth: number;
+  readOnly: boolean;
 }) {
   const style = roleStyle[comment.authorRole];
   const children = byParent.get(comment.id) ?? [];
@@ -258,17 +267,19 @@ function CommentNode({
         <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-800">
           {comment.body}
         </p>
-        <button
-          type="button"
-          onClick={() => onReplyTo(isReplying ? null : comment.id)}
-          className="mt-1 text-[10px] text-gray-400 underline-offset-2 hover:text-gray-700 hover:underline"
-        >
-          {isReplying ? "답글 취소" : "답글"}
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => onReplyTo(isReplying ? null : comment.id)}
+            className="mt-1 text-[10px] text-gray-400 underline-offset-2 hover:text-gray-700 hover:underline"
+          >
+            {isReplying ? "답글 취소" : "답글"}
+          </button>
+        )}
       </div>
 
       {/* 답글 폼 */}
-      {isReplying && (
+      {isReplying && !readOnly && (
         <div className="ml-3 mt-1.5">
           <CommentForm
             docId={docId}
@@ -294,6 +305,7 @@ function CommentNode({
               replyTo={replyTo}
               onReplyTo={onReplyTo}
               depth={depth + 1}
+              readOnly={readOnly}
             />
           ))}
         </div>

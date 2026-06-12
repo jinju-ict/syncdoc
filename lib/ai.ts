@@ -18,7 +18,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import type { Role } from "./schema";
+import type { ExpertiseLevel, Role } from "./schema";
 
 export type TranslateResult =
   | { ok: true; md: string }
@@ -34,6 +34,64 @@ export type AbstractResult =
 
 function toError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+// ---------------------------------------------------------------------------
+// 토큰 사용량/비용 로깅 — 모든 AI 호출 후 dev 서버 터미널에 출력
+// ---------------------------------------------------------------------------
+
+/** USD per 1M tokens. 모델명 prefix 매칭 — 구체적인 prefix를 먼저 둘 것. */
+const PRICING_PER_MTOK: { prefix: string; input: number; output: number }[] = [
+  // Anthropic
+  { prefix: "claude-opus-4", input: 5, output: 25 },
+  { prefix: "claude-sonnet-4", input: 3, output: 15 },
+  { prefix: "claude-haiku-4", input: 1, output: 5 },
+  // OpenAI ("gpt-5.1"은 "gpt-5"보다 먼저)
+  { prefix: "gpt-5.1", input: 1.25, output: 10 },
+  { prefix: "gpt-5-mini", input: 0.25, output: 2 },
+  { prefix: "gpt-5-nano", input: 0.05, output: 0.4 },
+  { prefix: "gpt-5", input: 1.25, output: 10 },
+  { prefix: "gpt-4o-mini", input: 0.15, output: 0.6 },
+  { prefix: "gpt-4o", input: 2.5, output: 10 },
+  { prefix: "gpt-4.1-mini", input: 0.4, output: 1.6 },
+  { prefix: "gpt-4.1", input: 2, output: 8 },
+];
+
+// dev 서버 프로세스 생존 동안의 누적치 (재기동 시 리셋)
+let sessionTokens = 0;
+let sessionCostUsd = 0;
+
+function logUsage(
+  provider: Provider,
+  model: string,
+  op: string,
+  inputTokens: number,
+  outputTokens: number
+): void {
+  const fmt = (n: number) => n.toLocaleString("en-US");
+  let costLabel: string;
+
+  if (provider === "ollama") {
+    costLabel = "$0.0000 (로컬 — 무료)";
+  } else {
+    const price = PRICING_PER_MTOK.find((p) => model.startsWith(p.prefix));
+    if (price) {
+      const cost =
+        (inputTokens / 1_000_000) * price.input +
+        (outputTokens / 1_000_000) * price.output;
+      sessionCostUsd += cost;
+      costLabel = `$${cost.toFixed(4)}`;
+    } else {
+      costLabel = "단가 미등록 (비용 생략)";
+    }
+  }
+  sessionTokens += inputTokens + outputTokens;
+
+  console.log(
+    `[AI 사용량] ${op} · ${provider}/${model} — 입력 ${fmt(inputTokens)} + 출력 ${fmt(
+      outputTokens
+    )} 토큰 = ${costLabel} | 서버 누적 ${fmt(sessionTokens)} 토큰, $${sessionCostUsd.toFixed(4)}`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +146,9 @@ function resolveProvider(): ProviderConfig {
       ok: true,
       provider,
       apiKey,
-      model: process.env.ANTHROPIC_MODEL ?? "claude-opus-4-8",
+      // `||` 사용: .env.local에 `KEY=`(빈 값)로 두는 경우가 정상 패턴이므로
+      // 빈 문자열도 "미설정"으로 취급해 기본값을 적용한다.
+      model: process.env.ANTHROPIC_MODEL || "claude-opus-4-8",
     };
   }
 
@@ -108,7 +168,8 @@ function resolveProvider(): ProviderConfig {
       provider,
       apiKey,
       model,
-      baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+      // 빈 문자열(`OPENAI_BASE_URL=`)도 미설정으로 취급 — `??`면 fetch("/chat/...")가 즉시 실패한다
+      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
     };
   }
 
@@ -124,9 +185,9 @@ function resolveProvider(): ProviderConfig {
   return {
     ok: true,
     provider: "ollama",
-    apiKey: process.env.OLLAMA_API_KEY ?? "ollama", // Ollama는 인증을 무시하지만 헤더 형식은 맞춘다
+    apiKey: process.env.OLLAMA_API_KEY || "ollama", // Ollama는 인증을 무시하지만 헤더 형식은 맞춘다
     model,
-    baseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
+    baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
   };
 }
 
@@ -142,6 +203,7 @@ async function openaiCompatChat(
     system: string;
     user: string;
     maxTokens: number;
+    op: string;
     responseFormat?: Record<string, unknown>;
   }
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
@@ -171,7 +233,15 @@ async function openaiCompatChat(
 
   const data = (await res.json()) as {
     choices?: { message?: { content?: string | null } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
+  logUsage(
+    cfg.provider,
+    cfg.model,
+    args.op,
+    data.usage?.prompt_tokens ?? 0,
+    data.usage?.completion_tokens ?? 0
+  );
   const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) return { ok: false, error: "응답이 비어 있습니다." };
   return { ok: true, text };
@@ -198,6 +268,7 @@ async function chatText(args: {
   system: string;
   user: string;
   maxTokens: number;
+  op: string;
 }): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   const cfg = resolveProvider();
   if (!cfg.ok) return cfg;
@@ -211,6 +282,13 @@ async function chatText(args: {
       system: args.system,
       messages: [{ role: "user", content: args.user }],
     });
+    logUsage(
+      "anthropic",
+      cfg.model,
+      args.op,
+      response.usage.input_tokens,
+      response.usage.output_tokens
+    );
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -227,6 +305,7 @@ async function chatStructured<T>(args: {
   system: string;
   user: string;
   maxTokens: number;
+  op: string;
   toolName: string;
   toolDescription: string;
   jsonSchema: JsonSchema;
@@ -257,6 +336,13 @@ async function chatStructured<T>(args: {
       ],
       messages: [{ role: "user", content: args.user }],
     });
+    logUsage(
+      "anthropic",
+      cfg.model,
+      args.op,
+      response.usage.input_tokens,
+      response.usage.output_tokens
+    );
     const toolUse = response.content.find(
       (b): b is Anthropic.ToolUseBlock =>
         b.type === "tool_use" && b.name === args.toolName
@@ -284,6 +370,7 @@ async function chatStructured<T>(args: {
       system: `${args.system}\n\n[출력 형식] 반드시 다음 JSON 스키마를 따르는 JSON 객체 하나만 출력한다. 다른 텍스트 금지:\n${JSON.stringify(args.jsonSchema)}`,
       user: args.user,
       maxTokens: args.maxTokens,
+      op: args.op,
       responseFormat: { type: "json_object" },
     });
     if (!second.ok) return first; // 원래 오류가 더 유의미
@@ -342,16 +429,42 @@ ${HARD_RULES}`,
 ${HARD_RULES}`,
 };
 
-/** 블록 원문을 상대 직군 관점으로 1회 번역 (잠금 트랜잭션 밖에서 호출됨) */
+/**
+ * 독자 숙련도별 표현 조정 — 내용(요구사항·수치·결정)이 아니라 표현 방식만 바꾼다.
+ * 무창작·'확인 필요' 절대 규칙은 레벨과 무관하게 그대로 적용된다.
+ */
+const LEVEL_ADDENDUM: Record<ExpertiseLevel, string> = {
+  beginner: `
+
+[독자 수준: 입문]
+- 독자는 이 분야 배경지식이 거의 없다. 전문 용어·약어는 첫 등장 시
+  괄호로 한 줄 풀이를 덧붙인다. (예: "슬라이딩 윈도우(최근 일정 시간만 집계하는 방식)")
+- 짧은 문장과 단계적 설명을 쓰고, 필요하면 원문 사실 범위 안에서 일상적 표현으로 풀어 쓴다.
+- 주의: 풀이는 표현을 돕는 장치다. 원문에 없는 요구사항·수치·결정을 새로 만드는 것은
+  여전히 금지다(절대 규칙 1·2 그대로 적용).`,
+  intermediate: "",
+  expert: `
+
+[독자 수준: 전문가]
+- 독자는 해당 직군 전문가다. 용어 풀이·배경 설명은 생략하고 밀도 높게 요점만 정리한다.
+- 간결함이 우선이지만 원문의 수치·조건·예외는 하나도 생략하지 않는다.`,
+};
+
+/**
+ * 블록 원문을 상대 직군 관점으로 1회 번역 (잠금 트랜잭션 밖에서 호출됨).
+ * targetLevel = 번역을 읽을 사용자의 숙련도 (호출 시점에 조회된 값).
+ */
 export async function translate(
   sourceMd: string,
-  targetRole: Role
+  targetRole: Role,
+  targetLevel: ExpertiseLevel = "intermediate"
 ): Promise<TranslateResult> {
   try {
     const result = await chatText({
-      system: TRANSLATE_SYSTEM[targetRole],
+      system: TRANSLATE_SYSTEM[targetRole] + LEVEL_ADDENDUM[targetLevel],
       user: `다음 원문 마크다운을 규칙에 따라 번역(재구성)하라:\n\n${sourceMd}`,
       maxTokens: 16000,
+      op: `translate→${targetRole}(${targetLevel})`,
     });
     if (!result.ok) return result;
     return { ok: true, md: result.text };
@@ -403,6 +516,7 @@ export async function suggest(draftMd: string): Promise<SuggestResult> {
       system: SUGGEST_SYSTEM,
       user: `다음 초안 마크다운을 검토하고 개선 제안을 제출하라:\n\n${draftMd}`,
       maxTokens: 8192,
+      op: "suggest",
       toolName: SUGGEST_TOOL_NAME,
       toolDescription:
         "초안에 대한 객관식 개선 제안 목록을 제출한다. options의 각 항목은 초안에 그대로 반영 가능한 한국어 마크다운 텍스트.",
@@ -493,6 +607,7 @@ export async function abstract(
       system: ABSTRACT_SYSTEM,
       user: `다음은 문서의 전체 잠금 히스토리(시간순)다. 규칙에 따라 Abstract와 TOC를 제출하라:\n\n${history}`,
       maxTokens: 16000,
+      op: "abstract",
       toolName: ABSTRACT_TOOL_NAME,
       toolDescription:
         "전체 히스토리 분석 결과인 Abstract(요약 표지)와 TOC(목차) 마크다운을 제출한다.",
