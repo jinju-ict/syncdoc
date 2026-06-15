@@ -10,7 +10,7 @@ import type { CSSProperties } from "react";
 import type { Lang, MemberInfo, ProjectRole, SectionContentItem, SignatureInfo } from "@/lib/repo";
 import { CONTENT_SECTIONS, META_SECTION, metaTitleL, sectionTitleL, type SectionKey } from "@/lib/sections";
 import { t } from "@/lib/i18n";
-import Markdown from "./Markdown";
+import Markdown from "@/components/common/Markdown";
 
 const FONT =
   "var(--font-instrument), 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif";

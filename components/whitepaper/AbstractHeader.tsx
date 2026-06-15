@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import type { AbstractInfo, DocConsensus, Lang } from "@/lib/repo";
 import { roleLabelL } from "@/lib/i18n";
 import { approveDocument, retryAbstract } from "@/app/doc/[id]/approval-actions";
-import Markdown from "./Markdown";
+import Markdown from "@/components/common/Markdown";
 
 const L = {
   agreement: { ko: "문서 합의", en: "Agreement", ja: "合意" },

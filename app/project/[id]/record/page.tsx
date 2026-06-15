@@ -5,7 +5,7 @@ import * as repo from "@/lib/repo";
 import type { CSSProperties } from "react";
 import { sectionTitleL } from "@/lib/sections";
 import { t, roleNameL } from "@/lib/i18n";
-import Markdown from "@/components/Markdown";
+import Markdown from "@/components/common/Markdown";
 
 export const dynamic = "force-dynamic";
 

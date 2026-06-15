@@ -1,4 +1,4 @@
-import StartShell from "@/components/StartShell";
+import StartShell from "@/components/start/StartShell";
 import * as repo from "@/lib/repo";
 import { getSession } from "@/lib/session";
 

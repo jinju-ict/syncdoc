@@ -5,11 +5,11 @@ import * as repo from "@/lib/repo";
 import type { CSSProperties } from "react";
 import type { Lang } from "@/lib/repo";
 import { t, roleNameL, permLabelL } from "@/lib/i18n";
-import MemberAdmin from "@/components/MemberAdmin";
-import InviteForm from "@/components/InviteForm";
-import PendingInvites from "@/components/PendingInvites";
-import JoinRequests from "@/components/JoinRequests";
-import JoinRequestForm from "@/components/JoinRequestForm";
+import MemberAdmin from "@/components/project/MemberAdmin";
+import InviteForm from "@/components/project/InviteForm";
+import PendingInvites from "@/components/project/PendingInvites";
+import JoinRequests from "@/components/project/JoinRequests";
+import JoinRequestForm from "@/components/project/JoinRequestForm";
 
 export const dynamic = "force-dynamic";
 

@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import type { AttachmentInfo, Lang, ProjectRole, TimelineBlock } from "@/lib/repo";
 import { retryTranslation } from "@/app/doc/[id]/actions";
 import { roleLabelL } from "@/lib/i18n";
-import Markdown from "./Markdown";
+import Markdown from "@/components/common/Markdown";
 
 const ROLE_AV: Record<ProjectRole, { c: string; bg: string; bd: string }> = {
   planner: { c: "#6D4FC8", bg: "#F1EDFB", bd: "#E2DAF6" },
