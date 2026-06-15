@@ -1197,6 +1197,21 @@ export type JoinRequestInfo = {
   createdAt: string;
 };
 
+/** 가시성 가드 없는 프로젝트 기본 정보 — 입장 요청 화면(비멤버)용 */
+export function getProjectMeta(
+  projectId: number
+): { id: number; title: string; linkShared: boolean } | null {
+  const row = sqlite
+    .prepare(
+      "SELECT id, title, link_shared AS linkShared FROM projects WHERE id = ?"
+    )
+    .get(projectId) as
+    | { id: number; title: string; linkShared: number }
+    | undefined;
+  if (!row) return null;
+  return { id: row.id, title: row.title, linkShared: row.linkShared === 1 };
+}
+
 /**
  * 입장 요청 제출 (멱등). 이미 멤버면 아무 것도 하지 않고 alreadyMember.
  * (project_id, user_id) 유니크 — 재요청 시 기존 행을 pending으로 되돌린다.

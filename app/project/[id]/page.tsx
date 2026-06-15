@@ -8,6 +8,8 @@ import { t, roleNameL, permLabelL } from "@/lib/i18n";
 import MemberAdmin from "@/components/MemberAdmin";
 import InviteForm from "@/components/InviteForm";
 import PendingInvites from "@/components/PendingInvites";
+import JoinRequests from "@/components/JoinRequests";
+import JoinRequestForm from "@/components/JoinRequestForm";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +40,31 @@ export default async function ProjectWorkspace({
   if (!Number.isInteger(projectId)) notFound();
 
   const project = repo.getProjectForUser(projectId, session.uid);
-  if (!project) redirect("/start"); // 비멤버는 접근 불가
+  const lang = repo.getUserLang(session.uid);
+
+  // 비멤버 — 입장 요청 화면(링크 공유 시) 또는 비공개 안내
+  if (!project) {
+    const meta = repo.getProjectMeta(projectId);
+    if (!meta) notFound();
+    const myStatus =
+      repo.getMyJoinRequest(projectId, session.uid)?.status ?? null;
+    return (
+      <JoinScreen
+        projectId={projectId}
+        title={meta.title}
+        linkShared={meta.linkShared}
+        myStatus={myStatus}
+        lang={lang}
+      />
+    );
+  }
 
   const docs = repo.listProjectDocuments(projectId);
   const mainDocs = docs.filter((d) => d.kind === "main");
   const canEdit = project.myPerm === "owner" || project.myPerm === "editor";
   const isOwner = project.myPerm === "owner";
   const pendingInvites = isOwner ? repo.listProjectInvites(projectId) : [];
-  const lang = repo.getUserLang(session.uid);
+  const joinRequests = isOwner ? repo.listJoinRequests(projectId) : [];
 
   return (
     <div style={{ fontFamily: FONT, color: "#1A1C20", minHeight: "100vh", background: "#F6F5F2", wordBreak: "keep-all" }}>
@@ -94,6 +113,7 @@ export default async function ProjectWorkspace({
                 <p style={{ fontSize: 13.5, fontWeight: 700, margin: "0 0 12px" }}>{t(lang, "mem.invite")}</p>
                 <InviteForm projectId={projectId} lang={lang} />
               </div>
+              {isOwner && <JoinRequests projectId={projectId} requests={joinRequests} lang={lang} />}
               {isOwner && <PendingInvites projectId={projectId} invites={pendingInvites} lang={lang} />}
             </div>
           ) : (
@@ -113,6 +133,46 @@ export default async function ProjectWorkspace({
             <RecordCard projectId={projectId} type="releases" lang={lang} />
           </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function JoinScreen({
+  projectId,
+  title,
+  linkShared,
+  myStatus,
+  lang,
+}: {
+  projectId: number;
+  title: string;
+  linkShared: boolean;
+  myStatus: repo.JoinRequestStatus | null;
+  lang: Lang;
+}) {
+  return (
+    <div style={{ fontFamily: FONT, color: "#1A1C20", minHeight: "100vh", background: "#F6F5F2", wordBreak: "keep-all" }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "64px 24px" }}>
+        <Link href="/start" style={{ fontSize: 13, fontWeight: 600, color: "#8A857A", textDecoration: "none" }}>
+          {t(lang, "join.backHome")}
+        </Link>
+        <div style={{ ...card, marginTop: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A958A", margin: "0 0 6px" }}>
+            {t(lang, "join.requestTitle")}
+          </p>
+          <h1 style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 8px" }}>{title}</h1>
+          {linkShared ? (
+            <>
+              <p style={{ fontSize: 13, color: "#9A958A", margin: "0 0 18px" }}>{t(lang, "join.requestDesc")}</p>
+              <JoinRequestForm projectId={projectId} myStatus={myStatus} lang={lang} />
+            </>
+          ) : (
+            <p style={{ fontSize: 13.5, color: "#A1462F", background: "#FBEDE8", border: "1px solid #F0D6CC", borderRadius: 10, padding: "12px 14px", margin: "8px 0 0" }}>
+              {t(lang, "join.private")}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

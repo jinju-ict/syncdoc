@@ -75,3 +75,59 @@ export async function revokeInviteAction(input: {
   revalidatePath(`/project/${input.projectId}`);
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// v0.2 입장 승인 (join_requests) — 사용자→소유자 방향
+// ---------------------------------------------------------------------------
+
+/** 입장 요청 제출 (로그인한 비멤버). 링크 공유가 켜진 프로젝트만 허용. */
+export async function requestJoinAction(input: {
+  projectId: number;
+  role: string;
+  message?: string;
+}): Promise<Result> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "로그인이 필요합니다" };
+  if (!ROLES.includes(input.role as ProjectRole))
+    return { ok: false, error: "잘못된 직군" };
+
+  const meta = repo.getProjectMeta(input.projectId);
+  if (!meta) return { ok: false, error: "프로젝트를 찾을 수 없습니다" };
+  if (!meta.linkShared)
+    return { ok: false, error: "링크 공유가 꺼진 비공개 프로젝트입니다" };
+
+  const r = repo.createJoinRequest({
+    projectId: input.projectId,
+    userId: session.uid,
+    requestedRole: input.role as ProjectRole,
+    message: input.message,
+  });
+  if (r.alreadyMember) return { ok: false, error: "이미 멤버입니다" };
+  revalidatePath(`/project/${input.projectId}`);
+  return { ok: true };
+}
+
+/** 입장 요청 승인 (소유자) — 멤버로 합류 */
+export async function approveJoinAction(input: {
+  projectId: number;
+  requestId: number;
+}): Promise<Result> {
+  const auth = await requireOwner(input.projectId);
+  if (!auth.ok) return auth;
+  const r = repo.approveJoinRequest(input.requestId, input.projectId, auth.uid);
+  if (!r.ok) return { ok: false, error: "처리할 수 없는 요청입니다" };
+  revalidatePath(`/project/${input.projectId}`);
+  return { ok: true };
+}
+
+/** 입장 요청 거절 (소유자) */
+export async function rejectJoinAction(input: {
+  projectId: number;
+  requestId: number;
+}): Promise<Result> {
+  const auth = await requireOwner(input.projectId);
+  if (!auth.ok) return auth;
+  repo.rejectJoinRequest(input.requestId, input.projectId, auth.uid);
+  revalidatePath(`/project/${input.projectId}`);
+  return { ok: true };
+}

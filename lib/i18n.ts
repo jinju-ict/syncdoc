@@ -28,6 +28,11 @@ type Key =
   | "pj.recordsAuto" | "pj.recMinutesDesc" | "pj.recReleasesDesc"
   | "pj.view" | "pj.exportMd" | "pj.empty" | "pj.ownerCanManage"
   | "pj.pending" | "pj.cancel"
+  // 입장 승인 (join requests)
+  | "join.requests" | "join.approve" | "join.reject" | "join.requestTitle"
+  | "join.requestDesc" | "join.message" | "join.messagePh" | "join.submit"
+  | "join.pendingMine" | "join.rejectedMine" | "join.private" | "join.backHome"
+  | "join.sent"
   // 멤버/초대
   | "mem.invite" | "mem.email" | "mem.role" | "mem.perm" | "mem.send"
   | "mem.added" | "mem.sent" | "mem.needEmail" | "mem.removeConfirm" | "mem.me"
@@ -69,6 +74,13 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "pj.recMinutesDesc": "대화를 날짜별로 정리한 회의 기록", "pj.recReleasesDesc": "합의·증류될 때마다 박제되는 결정 노트",
     "pj.view": "보기", "pj.exportMd": ".md 내보내기", "pj.empty": "아직 없습니다.",
     "pj.ownerCanManage": "· 직군·권한 변경/제거 가능", "pj.pending": "대기 중 초대", "pj.cancel": "취소",
+    "join.requests": "입장 요청", "join.approve": "승인", "join.reject": "거절",
+    "join.requestTitle": "이 채팅방에 입장 요청", "join.requestDesc": "직군을 선택해 입장을 요청하면 소유자 승인 후 합류합니다.",
+    "join.message": "메시지(선택)", "join.messagePh": "간단한 소개나 입장 사유를 적어주세요",
+    "join.submit": "입장 요청 보내기", "join.sent": "입장 요청을 보냈습니다",
+    "join.pendingMine": "입장 요청을 보냈습니다. 소유자 승인을 기다리는 중입니다.",
+    "join.rejectedMine": "입장 요청이 거절되었습니다.", "join.private": "비공개 채팅방입니다. 초대를 통해서만 참여할 수 있습니다.",
+    "join.backHome": "← 내 프로젝트",
     "mem.invite": "팀원 초대", "mem.email": "이메일", "mem.role": "직군", "mem.perm": "권한", "mem.send": "초대 보내기",
     "mem.added": "팀원을 추가했어요", "mem.sent": "초대를 보냈어요", "mem.needEmail": "이메일을 입력하세요",
     "mem.removeConfirm": "님을 프로젝트에서 제거할까요?", "mem.me": "(나)",
@@ -108,6 +120,13 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "pj.recMinutesDesc": "Meeting record organized by date", "pj.recReleasesDesc": "Decision notes captured on each agreement",
     "pj.view": "View", "pj.exportMd": "Export .md", "pj.empty": "Nothing yet.",
     "pj.ownerCanManage": "· can change role/permission, remove", "pj.pending": "Pending invites", "pj.cancel": "Cancel",
+    "join.requests": "Join requests", "join.approve": "Approve", "join.reject": "Reject",
+    "join.requestTitle": "Request to join this room", "join.requestDesc": "Pick your role and request to join; you're added after the owner approves.",
+    "join.message": "Message (optional)", "join.messagePh": "Introduce yourself or say why you'd like to join",
+    "join.submit": "Send join request", "join.sent": "Join request sent",
+    "join.pendingMine": "Your join request was sent. Waiting for the owner to approve.",
+    "join.rejectedMine": "Your join request was rejected.", "join.private": "This is a private room. You can only join by invitation.",
+    "join.backHome": "← My projects",
     "mem.invite": "Invite member", "mem.email": "Email", "mem.role": "Role", "mem.perm": "Permission", "mem.send": "Send invite",
     "mem.added": "Member added", "mem.sent": "Invite sent", "mem.needEmail": "Enter an email",
     "mem.removeConfirm": " — remove from the project?", "mem.me": "(you)",
@@ -147,6 +166,13 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "pj.recMinutesDesc": "会話を日付ごとに整理した会議記録", "pj.recReleasesDesc": "合意・蒸留のたびに記録される決定ノート",
     "pj.view": "表示", "pj.exportMd": ".md エクスポート", "pj.empty": "まだありません。",
     "pj.ownerCanManage": "· 職種・権限の変更/削除が可能", "pj.pending": "保留中の招待", "pj.cancel": "取消",
+    "join.requests": "入室リクエスト", "join.approve": "承認", "join.reject": "却下",
+    "join.requestTitle": "このルームへの入室リクエスト", "join.requestDesc": "職種を選んで入室をリクエストすると、オーナーの承認後に参加できます。",
+    "join.message": "メッセージ（任意）", "join.messagePh": "簡単な自己紹介や入室理由を書いてください",
+    "join.submit": "入室リクエストを送る", "join.sent": "入室リクエストを送りました",
+    "join.pendingMine": "入室リクエストを送りました。オーナーの承認待ちです。",
+    "join.rejectedMine": "入室リクエストが却下されました。", "join.private": "非公開ルームです。招待からのみ参加できます。",
+    "join.backHome": "← マイプロジェクト",
     "mem.invite": "メンバー招待", "mem.email": "メール", "mem.role": "職種", "mem.perm": "権限", "mem.send": "招待を送る",
     "mem.added": "メンバーを追加しました", "mem.sent": "招待を送りました", "mem.needEmail": "メールを入力してください",
     "mem.removeConfirm": "さんをプロジェクトから削除しますか？", "mem.me": "（自分）",
