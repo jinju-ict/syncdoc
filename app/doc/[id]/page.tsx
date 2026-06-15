@@ -9,6 +9,7 @@ import LevelSelector from "@/components/doc/LevelSelector";
 import ArchiveButton from "@/components/doc/ArchiveButton";
 import WhitepaperReader from "@/components/whitepaper/WhitepaperReader";
 import DocLensShell from "@/components/doc/DocLensShell";
+import { CONTENT_SECTIONS } from "@/lib/sections";
 import { t } from "@/lib/i18n";
 import { after } from "next/server";
 import { runBlockJob, runSectionI18nJob, runClassifyJob, runDistillJob } from "@/lib/translation-runner";
@@ -102,6 +103,10 @@ export default async function DocPage({
     ? repo.getProjectForUser(ctx.projectId, session.uid)
     : null;
   const members = myProject?.members ?? [];
+  // 백서 화면 분류 교정 권한 — 편집자 이상 (레거시·프로젝트 없는 문서는 허용)
+  const canCurate = ctx?.projectId
+    ? myProject?.myPerm === "owner" || myProject?.myPerm === "editor"
+    : true;
 
   const whitepaperMeta = {
     title: doc.title,
@@ -140,6 +145,12 @@ export default async function DocPage({
     );
   } else {
     // 백서(기본): 목차 있는 산문 문서 + 문서 합의(서명·표지) 패널
+    // 편집자에겐 절별 출처 메시지 교정(제외/재분류)을 함께 내려준다.
+    const sourceBySection: Record<string, repo.SectionSourceMessage[]> = {};
+    if (canCurate && !archived) {
+      for (const s of CONTENT_SECTIONS)
+        sourceBySection[s.key] = repo.getSectionSourceMessages(docId, s.key);
+    }
     lensContent = (
       <div>
         <AbstractHeader
@@ -156,6 +167,8 @@ export default async function DocPage({
           signatures={signatures}
           content={sectionContent}
           lang={viewerLang}
+          canCurate={canCurate && !archived}
+          sourceBySection={sourceBySection}
         />
       </div>
     );

@@ -64,3 +64,21 @@ describe("분류 기반 증류 입력 선택", () => {
     expect(after).toEqual(["why"]);
   });
 });
+
+describe("백서 화면 교정 — 제외/재분류", () => {
+  it("setMessageExcluded: 출처엔 남고(excluded) 증류 입력에선 빠진다", () => {
+    repo.setMessageExcluded(b3, true);
+    expect(repo.getSectionSourceMessages(docId, "why").find((m) => m.id === b3)?.excluded).toBe(true);
+    expect(repo.getClassifiedSectionMessages(docId, "why").map((m) => m.id)).not.toContain(b3);
+    repo.setMessageExcluded(b3, false);
+    expect(repo.getClassifiedSectionMessages(docId, "why").map((m) => m.id)).toContain(b3);
+  });
+
+  it("setMessageOverrideSection: 메시지를 다른 절로 이동, null이면 AI값 복원", () => {
+    repo.setMessageOverrideSection(b3, "what");
+    expect(repo.getSectionSourceMessages(docId, "why").map((m) => m.id)).not.toContain(b3);
+    expect(repo.getSectionSourceMessages(docId, "what").map((m) => m.id)).toContain(b3);
+    repo.setMessageOverrideSection(b3, null);
+    expect(repo.getSectionSourceMessages(docId, "why").map((m) => m.id)).toContain(b3);
+  });
+});

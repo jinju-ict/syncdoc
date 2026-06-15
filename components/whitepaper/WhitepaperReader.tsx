@@ -7,10 +7,11 @@
  */
 
 import type { CSSProperties } from "react";
-import type { Lang, MemberInfo, ProjectRole, SectionContentItem, SignatureInfo } from "@/lib/repo";
+import type { Lang, MemberInfo, ProjectRole, SectionContentItem, SectionSourceMessage, SignatureInfo } from "@/lib/repo";
 import { CONTENT_SECTIONS, META_SECTION, metaTitleL, sectionTitleL, type SectionKey } from "@/lib/sections";
 import { t } from "@/lib/i18n";
 import Markdown from "@/components/common/Markdown";
+import SectionCuration from "./SectionCuration";
 
 const FONT =
   "var(--font-instrument), 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif";
@@ -74,12 +75,16 @@ export default function WhitepaperReader({
   signatures,
   content,
   lang = "ko",
+  canCurate = false,
+  sourceBySection,
 }: {
   meta: WhitepaperMeta;
   members: MemberInfo[];
   signatures: SignatureInfo[];
   content: SectionContentItem[];
   lang?: Lang;
+  canCurate?: boolean;
+  sourceBySection?: Record<string, SectionSourceMessage[]>;
 }) {
   const bySection = new Map<SectionKey, SectionContentItem[]>();
   for (const s of CONTENT_SECTIONS) bySection.set(s.key, []);
@@ -224,6 +229,14 @@ export default function WhitepaperReader({
                       );
                     })}
                   </div>
+                )}
+                {canCurate && (
+                  <SectionCuration
+                    docId={meta.docId}
+                    sectionKey={s.key}
+                    messages={sourceBySection?.[s.key] ?? []}
+                    lang={lang}
+                  />
                 )}
               </section>
             );

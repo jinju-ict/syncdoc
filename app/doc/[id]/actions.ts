@@ -155,6 +155,31 @@ export async function requestReplySuggestions(
 }
 
 /**
+ * 백서 화면 분류 교정 (편집자 이상) — 출처 메시지를 제외하거나 다른 절로 재분류한다.
+ * 변경 후 다음 렌더에서 시그니처가 바뀌어 해당 절이 자동 재증류된다.
+ */
+export async function correctSectionMessage(
+  docId: number,
+  messageId: number,
+  change: { excluded?: boolean; section?: string | null }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireSession();
+  const projectId = repo.getProjectIdForDoc(docId);
+  if (projectId != null) {
+    const m = repo.getMembership(projectId, session.uid);
+    if (!m || (m.perm !== "owner" && m.perm !== "editor"))
+      return { ok: false, error: "교정 권한이 없습니다 (편집자 이상)." };
+  }
+  if (change.excluded !== undefined) repo.setMessageExcluded(messageId, change.excluded);
+  if (change.section !== undefined) {
+    const sec = change.section === null ? null : asSection(change.section);
+    if (change.section === null || sec) repo.setMessageOverrideSection(messageId, sec);
+  }
+  revalidatePath(`/doc/${docId}`);
+  return { ok: true };
+}
+
+/**
  * 내 숙련도 레벨 변경 — 이후 새로 생성되는 번역(새 블록·재시도)부터 적용된다.
  * 이미 완료(ok)된 번역은 다시 생성하지 않는다 (비용·히스토리 보존).
  */

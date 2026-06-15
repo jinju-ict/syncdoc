@@ -1479,9 +1479,8 @@ export function getAttachment(
 }
 
 // ---------------------------------------------------------------------------
-// v0.2 메시지 관련도·분류 (message_relevance) — AI 자동 판정.
-// (pinned/excluded/override_section_key 컬럼은 증류 입력 필터로 읽히고,
-//  향후 백서 화면의 교정 기능을 위해 보존된다 — 현재 쓰기 경로는 없다)
+// v0.2 메시지 관련도·분류 (message_relevance) — AI 자동 판정 + 백서 화면 교정.
+// 채팅은 단순하게 두고, 분류가 틀린 경우 백서 렌즈에서 편집자가 제외/재분류한다.
 // ---------------------------------------------------------------------------
 
 /** AI 분류 결과 기록 */
@@ -1510,6 +1509,73 @@ export function upsertMessageRelevanceAI(args: {
       now(),
       now()
     );
+}
+
+// --- 백서 화면 교정: 제외 / 절 재분류 (편집자) ---
+
+function ensureRelevanceRow(messageId: number): void {
+  sqlite
+    .prepare(
+      "INSERT OR IGNORE INTO message_relevance (message_id, updated_at) VALUES (?, ?)"
+    )
+    .run(messageId, now());
+}
+
+/** 이 메시지를 백서에서 제외/포함 토글 (증류 입력에서 빠진다) */
+export function setMessageExcluded(messageId: number, excluded: boolean): void {
+  ensureRelevanceRow(messageId);
+  sqlite
+    .prepare(
+      "UPDATE message_relevance SET excluded = ?, updated_at = ? WHERE message_id = ?"
+    )
+    .run(excluded ? 1 : 0, now(), messageId);
+}
+
+/** 이 메시지의 절을 사람이 재지정 (NULL = AI 분류값 사용) */
+export function setMessageOverrideSection(
+  messageId: number,
+  sectionKey: string | null
+): void {
+  ensureRelevanceRow(messageId);
+  sqlite
+    .prepare(
+      "UPDATE message_relevance SET override_section_key = ?, updated_at = ? WHERE message_id = ?"
+    )
+    .run(sectionKey, now(), messageId);
+}
+
+/** 한 절에 분류된 출처 메시지 목록 (제외된 것 포함 — 백서 교정 UI용) */
+export type SectionSourceMessage = {
+  id: number;
+  authorRole: ProjectRole;
+  snippet: string;
+  excluded: boolean;
+  relevance: number | null;
+};
+export function getSectionSourceMessages(
+  docId: number,
+  sectionKey: SectionKey
+): SectionSourceMessage[] {
+  const rows = sqlite
+    .prepare(
+      `SELECT b.id,
+              COALESCE(b.author_project_role, b.author_role) AS authorRole,
+              substr(b.source_md, 1, 90) AS snippet,
+              mr.excluded, mr.ai_relevance AS relevance
+       FROM blocks b
+       JOIN message_relevance mr ON mr.message_id = b.id
+       WHERE b.doc_id = ? AND b.status = 'locked' AND mr.classified_at IS NOT NULL
+         AND COALESCE(mr.override_section_key, mr.ai_section_key) = ?
+       ORDER BY b.locked_at ASC, b.seq ASC`
+    )
+    .all(docId, sectionKey) as {
+    id: number;
+    authorRole: ProjectRole;
+    snippet: string;
+    excluded: number;
+    relevance: number | null;
+  }[];
+  return rows.map((r) => ({ ...r, excluded: r.excluded === 1 }));
 }
 
 /** 분류 작업 — 아직 AI 분류되지 않은 메시지(잠긴 블록) */
