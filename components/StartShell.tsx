@@ -330,8 +330,19 @@ export default function StartShell({
   }
   function onOpenDoc() {
     if (!curProject) return;
-    // 프로젝트를 열면 본문·회의록·릴리스가 함께 있는 워크스페이스로 이동
-    router.push(`/project/${curProject.id}`);
+    // 프로젝트를 열면 바로 대화창(채팅)으로 — 관리 화면은 채팅 헤더의 프로젝트 링크로
+    if (curProject.mainDocId) router.push(`/doc/${curProject.mainDocId}?lens=conv`);
+    else router.push(`/project/${curProject.id}`);
+  }
+  function openProjectChat(p: ProjectDetail) {
+    // 프로젝트 클릭 = 대화창으로 직행
+    if (p.mainDocId) router.push(`/doc/${p.mainDocId}?lens=conv`);
+    else { setCur(p.id); setScreen("project"); }
+  }
+  function manageProject(p: ProjectDetail) {
+    // 팀원·초대·링크 공유 관리 화면
+    setCur(p.id);
+    setScreen("project");
   }
   function openCreate() {
     setScreen("create");
@@ -460,16 +471,23 @@ export default function StartShell({
                       아직 프로젝트가 없습니다. 오른쪽 위 <strong>새 프로젝트</strong>로 시작하세요.
                     </p>
                   ) : (
-                    <div className="sd-grid-2">
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       {projects.map((p) => (
-                        <button key={p.id} className="sd-card" onClick={() => { setCur(p.id); setScreen("project"); }} style={{ textAlign: "start", background: "#fff", border: "1px solid #E9E6DE", borderRadius: 16, padding: "20px 22px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(40,36,26,0.04)" }}>
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "#6E6A60", background: "#F4F2EC", borderRadius: 7, padding: "3px 9px" }}>{typeName(p.type)}</span>
-                          <span style={{ display: "block", fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em", margin: "12px 0 6px" }}>{p.title}</span>
-                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={roleChip(p.myRole)}>{ROLE[p.myRole].label}</span>
+                        <div key={p.id} className="sd-card" style={{ display: "flex", alignItems: "center", gap: 14, background: "#fff", border: "1px solid #E9E6DE", borderRadius: 14, padding: "16px 20px", boxShadow: "0 1px 2px rgba(40,36,26,0.04)" }}>
+                          <button onClick={() => openProjectChat(p)} title="대화 열기" style={{ flex: 1, minWidth: 0, textAlign: "start", background: "none", border: 0, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 16.5, fontWeight: 700, letterSpacing: "-0.01em" }}>{p.title}</span>
+                              <span style={roleChip(p.myRole)}>{ROLE[p.myRole].label}</span>
+                            </span>
                             <span style={{ fontSize: 12.5, color: "#9A958A" }}>{PERM[p.myPerm]} · 멤버 {p.members.length}</span>
-                          </span>
-                        </button>
+                          </button>
+                          <button onClick={() => manageProject(p)} title="팀원·초대·공유 관리" style={{ flexShrink: 0, background: "#fff", border: "1px solid #E0DCD2", borderRadius: 9, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, color: "#6E6A60", cursor: "pointer", fontFamily: "inherit" }}>관리</button>
+                          <button onClick={() => openProjectChat(p)} title="대화 열기" aria-label="대화 열기" style={{ flexShrink: 0, background: "#2D4FD4", border: 0, borderRadius: 10, width: 36, height: 36, display: "grid", placeItems: "center", cursor: "pointer" }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.5 0-3-.4-4.2-1.1L3 20l1.1-5.3A8.5 8.5 0 1 1 21 11.5z" />
+                            </svg>
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}
