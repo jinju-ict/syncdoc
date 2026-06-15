@@ -13,26 +13,33 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Role } from "@/lib/repo";
+import type { ProjectRole } from "@/lib/repo";
 import {
   saveDraft,
   sendBlock,
   requestSuggestions,
 } from "@/app/doc/[id]/actions";
 
-const roleLabel: Record<Role, string> = {
+const roleLabel: Record<ProjectRole, string> = {
   planner: "기획팀",
   developer: "개발팀",
+  designer: "디자인팀",
+  ops: "운영팀",
 };
 
 export default function DraftEditor({
   docId,
   draft,
   viewerRole,
+  sectionKey = null,
+  sectionLabel = null,
 }: {
   docId: number;
   draft: { id: number; sourceMd: string } | null;
-  viewerRole: Role;
+  viewerRole: ProjectRole;
+  /** 이 초안이 속한 백서 절 (나란히 렌즈). null = 전체/대화 렌즈 */
+  sectionKey?: string | null;
+  sectionLabel?: string | null;
 }) {
   const [md, setMd] = useState(draft?.sourceMd ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +56,7 @@ export default function DraftEditor({
   const handleSave = () => {
     setError(null);
     startTransition(async () => {
-      await saveDraft(docId, md);
+      await saveDraft(docId, md, sectionKey);
       setSavedAt(new Date().toLocaleTimeString());
     });
   };
@@ -61,7 +68,7 @@ export default function DraftEditor({
       return;
     }
     startTransition(async () => {
-      const result = await sendBlock(docId, md);
+      const result = await sendBlock(docId, md, sectionKey);
       if (result.ok) {
         setMd("");
         setSavedAt(null);
@@ -83,7 +90,7 @@ export default function DraftEditor({
     }
     setSuggestLoading(true);
     try {
-      const result = await requestSuggestions(docId, md);
+      const result = await requestSuggestions(docId, md, sectionKey);
       if (result.ok) {
         setSuggestions(result.options);
         setAppliedOptions(new Set());
@@ -111,6 +118,7 @@ export default function DraftEditor({
       <header className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
         <span className="text-sm font-medium text-gray-700">
           새 블록 초안 ({roleLabel[viewerRole]})
+          {sectionLabel && <span className="text-gray-400"> · {sectionLabel}</span>}
         </span>
         <span className="text-xs text-gray-400">
           보내기 전까지 상대에게 보이지 않습니다

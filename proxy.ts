@@ -10,9 +10,11 @@ const SESSION_COOKIE = "syncdoc_session";
 
 export function proxy(request: NextRequest) {
   const hasSession = request.cookies.has(SESSION_COOKIE);
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+  const { pathname } = request.nextUrl;
+  // /login과 /start(온보딩 셸)는 비로그인 상태에서도 진입할 수 있어야 한다.
+  const isPublic = pathname.startsWith("/login") || pathname.startsWith("/start");
 
-  if (!hasSession && !isLoginPage) {
+  if (!hasSession && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
   // 쿠키가 있어도 /login 접근은 허용한다. 쿠키 존재만으로 /로 되돌리면

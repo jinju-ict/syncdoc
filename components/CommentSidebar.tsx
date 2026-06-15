@@ -75,8 +75,8 @@ export default function CommentSidebar({
   };
 
   return (
-    <aside className="hidden w-72 shrink-0 lg:block">
-      <div className="sticky top-20 max-h-[calc(100vh-6rem)] space-y-3 overflow-y-auto pb-4 pr-1">
+    <aside className="w-full shrink-0 lg:w-72">
+      <div className="space-y-3 pb-4 pr-1 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
         <div className="flex items-baseline justify-between px-1">
           <h2 className="text-sm font-semibold text-gray-700">댓글</h2>
           <span className="text-xs text-gray-400">{totalComments}개</span>

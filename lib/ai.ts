@@ -18,7 +18,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import type { ExpertiseLevel, Role } from "./schema";
+import type { ExpertiseLevel, Lang, ProjectRole } from "./schema";
 
 export type TranslateResult =
   | { ok: true; md: string }
@@ -30,6 +30,10 @@ export type SuggestResult =
 
 export type AbstractResult =
   | { ok: true; abstractMd: string; tocMd: string }
+  | { ok: false; error: string };
+
+export type DistillResult =
+  | { ok: true; title: string; bodyMd: string }
   | { ok: false; error: string };
 
 function toError(e: unknown): string {
@@ -402,8 +406,8 @@ const HARD_RULES = `
 4. 원문이 이미 짧고 명확하면 억지로 늘리지 않는다 — 재구성은 관점 변환이지
    내용 증식이 아니다.`;
 
-/** targetRole별 시스템 프롬프트 — targetRole = 번역을 "읽는" 직군 */
-const TRANSLATE_SYSTEM: Record<Role, string> = {
+/** targetRole별 시스템 프롬프트 — targetRole = 번역을 "읽는" 직군 (4직군) */
+const TRANSLATE_SYSTEM: Record<ProjectRole, string> = {
   developer: `너는 기획자와 개발자 사이의 도메인 통역사다.
 기획자가 작성한 마크다운 문서를 받아, 개발자가 바로 구현 검토에 쓸 수 있도록
 **데이터 / 흐름 / 예외처리** 관점으로 재구성해 한국어 마크다운으로 출력한다.
@@ -426,6 +430,30 @@ ${HARD_RULES}`,
   설명한다. 기술적 제약(수치·한도·에러 동작)은 사용자 경험 언어로 옮기되 값은
   그대로 보존한다.
 - 의사결정 포인트: 기획 판단이 필요한 항목은 '확인 필요' 블록으로만 질문한다.
+${HARD_RULES}`,
+
+  designer: `너는 다른 직군과 디자이너 사이의 도메인 통역사다.
+받은 마크다운 문서를, 디자이너가 화면·경험 설계에 바로 쓸 수 있도록
+**사용자 플로우 / 화면·상태 / 인터랙션·콘텐츠** 관점으로 재구성해 한국어 마크다운으로 출력한다.
+
+[재구성 관점]
+- 사용자 플로우: 사용자가 목표를 이루기까지의 단계(진입 → 행동 → 결과)를 정리한다.
+- 화면·상태: 필요한 화면과 각 화면의 상태(빈 상태·로딩·성공·오류·권한 없음 등)를
+  원문 사실 범위 안에서 도출한다. 원문에 없는 화면을 지어내지 말 것.
+- 인터랙션·콘텐츠: 입력·피드백·문구가 필요한 지점을 짚되, 구체 문구·비주얼을
+  단정하지 말고 '확인 필요' 블록으로 질문한다.
+${HARD_RULES}`,
+
+  ops: `너는 다른 직군과 운영자 사이의 도메인 통역사다.
+받은 마크다운 문서를, 운영자가 출시·운영 준비에 바로 쓸 수 있도록
+**출시·롤아웃 / 모니터링·지표 / 장애·지원** 관점으로 재구성해 한국어 마크다운으로 출력한다.
+
+[재구성 관점]
+- 출시·롤아웃: 배포 순서·선행 조건·되돌리기(롤백) 기준을 원문 사실 범위 안에서 정리한다.
+- 모니터링·지표: 무엇을 관찰해야 하는지(원문에 등장한 지표·임계값 중심)를 모은다.
+  원문에 없는 수치·임계값을 만들지 말 것.
+- 장애·지원: 실패 시 동작과 사용자 영향, 문의 대응에 필요한 정보를 정리한다.
+  운영 정책 판단이 필요한 항목은 '확인 필요' 블록으로만 질문한다.
 ${HARD_RULES}`,
 };
 
@@ -450,21 +478,65 @@ const LEVEL_ADDENDUM: Record<ExpertiseLevel, string> = {
 - 간결함이 우선이지만 원문의 수치·조건·예외는 하나도 생략하지 않는다.`,
 };
 
+/** 자연어 출력 언어 — 직군 프롬프트가 "한국어"라 해도 이 지시가 최종 출력 언어를 정한다 */
+const LANG_NAME: Record<Lang, string> = { ko: "한국어", en: "English", ja: "日本語" };
+const LANG_ADDENDUM: Record<Lang, string> = {
+  ko: "",
+  en: `
+
+[OUTPUT LANGUAGE — HIGHEST PRIORITY]
+Even though the instructions above say to write in Korean, write the ENTIRE final output in natural English.
+Preserve all numbers, units, and proper nouns exactly. Keep the callout format but use "> ⚠️ Needs confirmation:" as the label.`,
+  ja: `
+
+[出力言語 — 最優先]
+上の指示に「韓国語で出力」とあっても、最終出力は必ず自然な日本語で書く。
+数値・単位・固有名詞はそのまま保持する。確認事項の引用ブロックは「> ⚠️ 要確認:」のラベルで書く。`,
+};
+
 /**
- * 블록 원문을 상대 직군 관점으로 1회 번역 (잠금 트랜잭션 밖에서 호출됨).
- * targetLevel = 번역을 읽을 사용자의 숙련도 (호출 시점에 조회된 값).
+ * 블록 원문을 상대 직군 관점 + 대상 언어로 1회 번역 (잠금 트랜잭션 밖에서 호출됨).
+ * targetLevel = 독자 숙련도, targetLang = 독자 자연어.
  */
 export async function translate(
   sourceMd: string,
-  targetRole: Role,
-  targetLevel: ExpertiseLevel = "intermediate"
+  targetRole: ProjectRole,
+  targetLevel: ExpertiseLevel = "intermediate",
+  targetLang: Lang = "ko"
 ): Promise<TranslateResult> {
   try {
     const result = await chatText({
-      system: TRANSLATE_SYSTEM[targetRole] + LEVEL_ADDENDUM[targetLevel],
+      system:
+        TRANSLATE_SYSTEM[targetRole] +
+        LEVEL_ADDENDUM[targetLevel] +
+        LANG_ADDENDUM[targetLang],
       user: `다음 원문 마크다운을 규칙에 따라 번역(재구성)하라:\n\n${sourceMd}`,
       maxTokens: 16000,
-      op: `translate→${targetRole}(${targetLevel})`,
+      op: `translate→${targetRole}(${targetLevel},${targetLang})`,
+    });
+    if (!result.ok) return result;
+    return { ok: true, md: result.text };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/**
+ * 백서 산문 직역 — 직군 관점 변환 없이 의미·수치를 보존해 대상 언어로만 옮긴다.
+ * (정본은 한국어 section_content, 이건 ko 외 언어 캐시용)
+ */
+export async function translateProse(
+  md: string,
+  targetLang: Lang
+): Promise<TranslateResult> {
+  if (targetLang === "ko") return { ok: true, md };
+  try {
+    const result = await chatText({
+      system: `You are a faithful document translator. Translate the given Korean markdown into ${LANG_NAME[targetLang]}.
+Rules: preserve meaning exactly — do not add, remove, or reinterpret. Keep all numbers, units, and proper nouns. Preserve markdown structure. Output only the translated markdown, no preamble.`,
+      user: md,
+      maxTokens: 8192,
+      op: `translateProse(${targetLang})`,
     });
     if (!result.ok) return result;
     return { ok: true, md: result.text };
@@ -536,9 +608,11 @@ export async function suggest(draftMd: string): Promise<SuggestResult> {
 
 const ABSTRACT_TOOL_NAME = "submit_abstract";
 
-const ABSTRACT_ROLE_LABEL: Record<Role, string> = {
+const ABSTRACT_ROLE_LABEL: Record<ProjectRole, string> = {
   planner: "기획자",
   developer: "개발자",
+  designer: "디자이너",
+  ops: "운영자",
 };
 
 const ABSTRACT_SYSTEM = `너는 기획자↔개발자 협업 문서의 서기다.
@@ -588,7 +662,7 @@ const abstractSchema = z.object({
 
 /** 전체 잠금 블록 히스토리 → Abstract + TOC */
 export async function abstract(
-  blocks: { sourceMd: string; authorRole: Role; versionTag: string | null }[]
+  blocks: { sourceMd: string; authorRole: ProjectRole; versionTag: string | null }[]
 ): Promise<AbstractResult> {
   try {
     if (blocks.length === 0)
@@ -619,6 +693,81 @@ export async function abstract(
       ok: true,
       abstractMd: result.data.abstract_md.trim(),
       tocMd: result.data.toc_md.trim(),
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// distillSection — 한 절의 대화(블록들) → 백서 절 산문 (1회 증류, 호출부가 캐시)
+// ---------------------------------------------------------------------------
+
+const DISTILL_TOOL_NAME = "submit_section";
+
+const DISTILL_SYSTEM = `너는 직군 간 협업 대화를 백서의 한 절로 증류하는 서기다.
+한 절("<섹션>")에 대한 시간순 대화(직군별 메시지들)를 받아, 그 절의 **합의된 내용**을
+읽기 좋은 한국어 산문으로 정리해 구조화된 형식으로만 제출한다.
+
+[증류 규칙]
+- 대화의 메시지 나열이 아니라, 합의에 도달한 "결론/현재 상태"를 문서 문장으로 쓴다.
+- 번복·구체화된 사항은 가장 나중 발언을 최종으로 채택한다.
+- 블록(말풍선) 형식이 아니라 흐르는 문단으로 쓴다. 짧으면 한 문단이어도 좋다.
+- title: 이 절 안에서 이 내용을 가리키는 짧은 항목 제목(10자 내외).
+- body_md: 합의된 산문(한국어 마크다운 본문만).
+
+[절대 규칙 — 무창작]
+1. 대화에 없는 요구사항·수치·기한·결정을 추가하지 않는다. 수치·고유명사·조건은 그대로 보존.
+2. 근거 없는 불확실 사항은 단정하지 말고 "> ⚠️ 확인 필요: …" 인용 블록으로만 표기.
+3. 인사말·서두·메타 설명 금지 — 두 필드에 마크다운 본문만.`;
+
+const DISTILL_JSON_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string", description: "절 안 세부 항목의 짧은 제목" },
+    body_md: { type: "string", description: "합의된 내용을 정리한 한국어 마크다운 산문" },
+  },
+  required: ["title", "body_md"],
+  additionalProperties: false,
+};
+
+const distillSchema = z.object({
+  title: z.string().trim().min(1),
+  body_md: z.string().trim().min(1),
+});
+
+/** 한 절의 대화 블록들을 그 절의 백서 산문으로 증류 */
+export async function distillSection(
+  blocks: { sourceMd: string; authorRole: ProjectRole }[],
+  sectionTitle: string
+): Promise<DistillResult> {
+  try {
+    if (blocks.length === 0)
+      return { ok: false, error: "증류할 대화가 없습니다." };
+
+    const convo = blocks
+      .map(
+        (b, i) =>
+          `#${i + 1} (${ABSTRACT_ROLE_LABEL[b.authorRole]})\n${b.sourceMd}`
+      )
+      .join("\n\n---\n\n");
+
+    const result = await chatStructured({
+      system: DISTILL_SYSTEM.replace("<섹션>", sectionTitle),
+      user: `다음은 "${sectionTitle}" 절의 대화(시간순)다. 규칙에 따라 이 절의 합의 내용을 증류하라:\n\n${convo}`,
+      maxTokens: 8192,
+      op: `distill(${sectionTitle})`,
+      toolName: DISTILL_TOOL_NAME,
+      toolDescription:
+        "한 절의 대화를 그 절의 백서 산문(title, body_md)으로 증류해 제출한다.",
+      jsonSchema: DISTILL_JSON_SCHEMA,
+      zodSchema: distillSchema,
+    });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      title: result.data.title.trim(),
+      bodyMd: result.data.body_md.trim(),
     };
   } catch (e) {
     return { ok: false, error: toError(e) };

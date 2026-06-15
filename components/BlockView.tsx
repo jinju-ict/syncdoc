@@ -12,22 +12,26 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Role, TimelineBlock } from "@/lib/repo";
+import type { Lang, ProjectRole, TimelineBlock } from "@/lib/repo";
 import { retryTranslation } from "@/app/doc/[id]/actions";
 import Markdown from "./Markdown";
 
-const roleLabel: Record<Role, string> = {
+const roleLabel: Record<ProjectRole, string> = {
   planner: "기획팀",
   developer: "개발팀",
+  designer: "디자인팀",
+  ops: "운영팀",
 };
 
 export default function BlockView({
   block,
   viewerRole,
+  viewerLang = "ko",
   docId,
 }: {
   block: TimelineBlock;
-  viewerRole: Role;
+  viewerRole: ProjectRole;
+  viewerLang?: Lang;
   docId: number;
 }) {
   // 원문 패널 기본 펼침 — 번역본과 원문을 같이 본다 (접기는 사용자 선택)
@@ -43,7 +47,8 @@ export default function BlockView({
 
   const handleRetry = () => {
     startTransition(async () => {
-      await retryTranslation(docId, block.id);
+      // 내 직군·언어용 번역을 (재)생성 — 행이 없으면 새로 만든다
+      await retryTranslation(docId, block.id, viewerRole, viewerLang);
       router.refresh();
     });
   };

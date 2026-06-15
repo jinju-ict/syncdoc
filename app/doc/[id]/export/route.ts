@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import * as repo from "@/lib/repo";
-import type { CommentInfo, Role } from "@/lib/repo";
+import type { CommentInfo, ProjectRole } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-const roleLabel: Record<Role, string> = {
+const roleLabel: Record<ProjectRole, string> = {
   planner: "기획자",
   developer: "개발자",
+  designer: "디자이너",
+  ops: "운영자",
 };
+
+const langLabel = { ko: "한국어", en: "English", ja: "日本語" } as const;
 
 const translationStatusLabel = {
   ok: "완료",
@@ -69,7 +73,10 @@ export async function GET(
   if (!doc) return new NextResponse("not found", { status: 404 });
 
   const abstract = repo.getLatestAbstract(docId);
-  const blocks = repo.getTimeline(docId); // 블록 + 번역 + 댓글 일괄
+  // 내보내는 사람 직군 기준으로 블록+댓글을 읽되, 번역 섹션은 전 직군을 따로 모은다
+  const viewerRole = repo.getDocProjectRole(docId, session.uid) ?? session.role;
+  const blocks = repo.getTimeline(docId, viewerRole); // 블록 + 댓글 (번역 필드는 섹션②에서 별도 처리)
+  const allTranslations = repo.listBlockTranslations(docId);
   const agreed = Boolean(doc.approvalPlannerAt && doc.approvalDeveloperAt);
   const totalComments = blocks.reduce((n, b) => n + b.comments.length, 0);
 
@@ -111,23 +118,36 @@ export async function GET(
     lines.push("");
   }
 
-  // ② 번역 기록 — 상대 직군이 실제로 읽은 뷰
+  // ② 번역 기록 — 각 직군이 실제로 읽은 뷰 (블록 × 직군)
   lines.push("---");
   lines.push("");
-  lines.push("## 번역 기록 (AI 생성, 블록별)");
+  lines.push("## 번역 기록 (AI 생성, 블록 × 직군별)");
   lines.push("");
+  const tByBlock = new Map<number, typeof allTranslations>();
+  for (const t of allTranslations) {
+    const arr = tByBlock.get(t.blockId);
+    if (arr) arr.push(t);
+    else tByBlock.set(t.blockId, [t]);
+  }
   for (const b of blocks) {
-    const t = b.translation;
-    const target = t ? roleLabel[t.targetRole] : roleLabel[b.authorRole === "planner" ? "developer" : "planner"];
-    const status = t ? translationStatusLabel[t.status] : "기록 없음";
-    lines.push(`### ${b.versionTag ?? "(버전 태그 없음)"} → ${target} 뷰 — ${status}`);
-    lines.push("");
-    if (t?.status === "ok" && t.translatedMd) {
-      lines.push(t.translatedMd.trim());
-    } else {
-      lines.push(`*(번역본 없음 — 상태: ${status})*`);
+    const tag = b.versionTag ?? "(버전 태그 없음)";
+    const ts = tByBlock.get(b.id) ?? [];
+    if (ts.length === 0) {
+      lines.push(`### ${tag} — (번역 없음)`);
+      lines.push("");
+      continue;
     }
-    lines.push("");
+    for (const t of ts) {
+      const status = translationStatusLabel[t.status];
+      lines.push(`### ${tag} → ${roleLabel[t.targetRole]} · ${langLabel[t.targetLang]} 뷰 — ${status}`);
+      lines.push("");
+      lines.push(
+        t.status === "ok" && t.translatedMd
+          ? t.translatedMd.trim()
+          : `*(번역본 없음 — 상태: ${status})*`
+      );
+      lines.push("");
+    }
   }
 
   // ③ 댓글 — 블록별 스레드 (들여쓰기 = 답글)

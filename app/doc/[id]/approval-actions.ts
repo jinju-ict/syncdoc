@@ -35,14 +35,13 @@ async function generateAbstractForDoc(
   try {
     const doc = repo.getDocument(docId);
     if (!doc) return { ok: false, error: "문서를 찾을 수 없습니다." };
-    if (!doc.approvalPlannerAt || !doc.approvalDeveloperAt)
-      return { ok: false, error: "양측 승인이 모두 필요합니다." };
+    // 합의 = 참여자(소유자·편집자) 전원 서명 (레거시 문서는 2축 폴백)
+    const consensus = repo.getDocConsensus(docId);
+    if (!consensus.agreed || !consensus.latestSignedAt)
+      return { ok: false, error: "참여자 전원의 합의가 필요합니다." };
 
-    // 최종 승인 시각 — ISO(UTC) 문자열이라 사전식 비교가 시간 비교와 동일
-    const approvedAt =
-      doc.approvalPlannerAt > doc.approvalDeveloperAt
-        ? doc.approvalPlannerAt
-        : doc.approvalDeveloperAt;
+    // 최종 합의 시각 — ISO(UTC) 문자열이라 사전식 비교가 시간 비교와 동일
+    const approvedAt = consensus.latestSignedAt;
 
     const latest = repo.getLatestAbstract(docId);
     if (latest && latest.generatedAt >= approvedAt) return { ok: true };
@@ -79,15 +78,23 @@ export async function approveDocument(
 ): Promise<ApprovalActionResult> {
   const session = await requireSession();
 
-  let bothApproved: boolean;
   try {
-    bothApproved = repo.setApproval(docId, session.role);
+    // 동의 주체의 직군은 프로젝트 멤버십에서 결정(2축 매핑), 폴백은 계정 역할
+    const role = repo.getDocRole(docId, session.uid) ?? session.role;
+    repo.setApproval(docId, role); // 레거시 호환(2축) — 게이트는 서명 기반
+    // 1인1서명 — 멤버십 4직군 표시값(없으면 2축 역할)으로 이 사용자의 합의를 기록
+    const projectId = repo.getProjectIdForDoc(docId);
+    const membership = projectId
+      ? repo.getMembership(projectId, session.uid)
+      : null;
+    repo.addSignature(docId, session.uid, membership?.role ?? role);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
   revalidatePath(`/doc/${docId}`);
 
-  if (!bothApproved) return { ok: true };
+  // 참여자 전원 서명되면 표지 생성 (아니면 서명만 기록하고 종료)
+  if (!repo.getDocConsensus(docId).agreed) return { ok: true };
   return generateAbstractForDoc(docId);
 }
 

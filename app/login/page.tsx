@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { login } from "./actions";
 
 export default async function LoginPage({
@@ -63,6 +64,11 @@ export default async function LoginPage({
         </form>
         <p className="mt-4 text-xs text-gray-400">
           데모 계정: planner / developer (비밀번호 demo1234)
+        </p>
+        <p className="mt-2 text-xs text-gray-400">
+          <Link href="/start" className="text-blue-600 hover:underline">
+            온보딩 · 프로젝트 셸 둘러보기 →
+          </Link>
         </p>
       </div>
     </main>

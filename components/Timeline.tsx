@@ -1,4 +1,4 @@
-import type { Role, TimelineBlock } from "@/lib/repo";
+import type { Lang, ProjectRole, TimelineBlock } from "@/lib/repo";
 import BlockView from "./BlockView";
 
 /**
@@ -7,10 +7,12 @@ import BlockView from "./BlockView";
 export default function Timeline({
   blocks,
   viewerRole,
+  viewerLang = "ko",
   docId,
 }: {
   blocks: TimelineBlock[];
-  viewerRole: Role;
+  viewerRole: ProjectRole;
+  viewerLang?: Lang;
   docId: number;
 }) {
   if (blocks.length === 0) {
@@ -25,7 +27,7 @@ export default function Timeline({
     <ol className="space-y-6">
       {blocks.map((block) => (
         <li key={block.id} id={`block-${block.id}`}>
-          <BlockView block={block} viewerRole={viewerRole} docId={docId} />
+          <BlockView block={block} viewerRole={viewerRole} viewerLang={viewerLang} docId={docId} />
         </li>
       ))}
     </ol>

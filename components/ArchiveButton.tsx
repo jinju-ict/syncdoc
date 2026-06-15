@@ -39,7 +39,18 @@ export default function ArchiveButton({
       type="button"
       onClick={onClick}
       disabled={isPending}
-      className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:border-gray-500 hover:text-gray-900 disabled:opacity-50"
+      style={{
+        background: "#fff",
+        border: "1px solid #E0DCD2",
+        borderRadius: 10,
+        padding: "6px 12px",
+        fontSize: 12.5,
+        fontWeight: 600,
+        color: "#6E6A60",
+        cursor: "pointer",
+        fontFamily: "inherit",
+        opacity: isPending ? 0.6 : 1,
+      }}
       title={
         archived
           ? "보관을 해제하고 이어서 작성합니다"
