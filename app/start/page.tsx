@@ -28,6 +28,7 @@ export default async function StartPage() {
       account={{ name: repo.accountDisplayName(acct), email: acct.email ?? "" }}
       projects={projects}
       invites={invites}
+      lang={acct.lang}
     />
   );
 }

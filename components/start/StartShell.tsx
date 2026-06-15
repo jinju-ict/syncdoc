@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import type {
   InviteInfo,
+  Lang,
   MemberInfo,
   Permission,
   ProjectDetail,
@@ -31,32 +32,18 @@ import {
   signup,
   toggleLinkAction,
 } from "@/app/start/actions";
+import { t, roleLabelL, roleNameL, permLabelL } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
-// 도메인 상수
+// 도메인 상수 — 라벨은 i18n(roleLabelL/roleNameL/permLabelL), 여기는 색상만.
 // ---------------------------------------------------------------------------
 
-const ROLE: Record<ProjectRole, { c: string; bg: string; label: string }> = {
-  planner: { c: "#6D4FC8", bg: "#F1EDFB", label: "기획" },
-  developer: { c: "#0D7E74", bg: "#E6F4F2", label: "개발" },
-  designer: { c: "#C2410C", bg: "#FBEEE4", label: "디자인" },
-  ops: { c: "#2D6FB0", bg: "#E7F0F8", label: "운영" },
+const ROLE: Record<ProjectRole, { c: string; bg: string }> = {
+  planner: { c: "#6D4FC8", bg: "#F1EDFB" },
+  developer: { c: "#0D7E74", bg: "#E6F4F2" },
+  designer: { c: "#C2410C", bg: "#FBEEE4" },
+  ops: { c: "#2D6FB0", bg: "#E7F0F8" },
 };
-const ROLENAME: Record<ProjectRole, string> = {
-  planner: "기획자",
-  developer: "개발자",
-  designer: "디자이너",
-  ops: "운영자",
-};
-const PERM: Record<Permission, string> = {
-  owner: "소유자",
-  editor: "편집자",
-  viewer: "제한된 뷰어",
-  link: "링크 뷰어",
-};
-function typeName(t: string): string {
-  return t === "meeting" ? "회의록" : t === "release" ? "릴리스" : "프로젝트";
-}
 
 const FONT = "var(--font-instrument), 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif";
 const MONO = "var(--font-jetbrains), monospace";
@@ -152,10 +139,10 @@ function seg(active: boolean, pos: "l" | "m" | "r"): CSSProperties {
 }
 
 const ROLE_ORDER: ProjectRole[] = ["planner", "developer", "designer", "ops"];
-const PERM_DEFS: [Permission, string, string][] = [
-  ["editor", "편집자", "작성·합의·서명"],
-  ["viewer", "제한된 뷰어", "초대된 사람만 읽기·댓글"],
-  ["link", "링크 뷰어", "링크가 있으면 누구나 읽기"],
+const PERM_DEFS: { id: Permission; descKey: "perm.editorDesc" | "perm.viewerDesc" | "perm.linkDesc" }[] = [
+  { id: "editor", descKey: "perm.editorDesc" },
+  { id: "viewer", descKey: "perm.viewerDesc" },
+  { id: "link", descKey: "perm.linkDesc" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -201,13 +188,19 @@ export default function StartShell({
   account,
   projects,
   invites,
+  lang: initialLang = "ko",
 }: {
   account: Account | null;
   projects: ProjectDetail[];
   invites: InviteInfo[];
+  lang?: Lang;
 }) {
   const router = useRouter();
   const authed = account !== null;
+
+  // UI 언어 — 로그인 사용자는 설정값, 로그아웃 화면은 스위처로 전환(세션 한정).
+  const [lang, setLang] = useState<Lang>(initialLang);
+  const tt = (k: Parameters<typeof t>[1]) => t(lang, k);
 
   const [screen, setScreen] = useState<Screen>(authed ? "home" : "login");
   const [suName, setSuName] = useState("");
@@ -254,7 +247,7 @@ export default function StartShell({
 
   async function doSignup() {
     if (pending) return;
-    if (!suEmail.trim()) { showToast("이메일을 입력하세요"); return; }
+    if (!suEmail.trim()) { showToast(tt("mem.needEmail")); return; }
     setPending(true);
     const r = await signup({ name: suName, email: suEmail, password: suPw });
     setPending(false);
@@ -263,7 +256,7 @@ export default function StartShell({
   }
   async function doLogin() {
     if (pending) return;
-    if (!liEmail.trim()) { showToast("이메일을 입력하세요"); return; }
+    if (!liEmail.trim()) { showToast(tt("mem.needEmail")); return; }
     setPending(true);
     const r = await loginEmail({ email: liEmail, password: liPw });
     setPending(false);
@@ -279,18 +272,18 @@ export default function StartShell({
     setCur(r.data.projectId);
     setScreen("project");
     router.refresh();
-    showToast("프로젝트를 만들었어요");
+    showToast(tt("toast.created"));
   }
   async function doInvite() {
     if (pending || cur == null) return;
-    if (!invEmail.trim()) { showToast("이메일을 입력하세요"); return; }
+    if (!invEmail.trim()) { showToast(tt("mem.needEmail")); return; }
     setPending(true);
     const r = await inviteAction({ projectId: cur, email: invEmail, role: invRole, perm: invPerm });
     setPending(false);
     if (!r.ok) { showToast(r.error); return; }
     setInvEmail("");
     router.refresh();
-    showToast(r.data.added ? "팀원을 추가했어요" : "초대를 보냈어요");
+    showToast(r.data.added ? tt("mem.added") : tt("mem.sent"));
   }
   async function doAccept(iv: InviteInfo) {
     if (pending) return;
@@ -301,7 +294,7 @@ export default function StartShell({
     setCur(r.data.projectId);
     setScreen("project");
     router.refresh();
-    showToast("프로젝트에 합류했어요");
+    showToast(tt("toast.joined"));
   }
   async function doDecline(iv: InviteInfo) {
     if (pending) return;
@@ -312,7 +305,7 @@ export default function StartShell({
   }
   async function doToggleLink() {
     if (pending || !curProject) return;
-    if (curProject.myPerm !== "owner") { showToast("변경 권한이 없습니다 (소유자만 가능)"); return; }
+    if (curProject.myPerm !== "owner") { showToast(tt("toast.noOwnerPerm")); return; }
     setPending(true);
     const r = await toggleLinkAction({ projectId: curProject.id, shared: !curProject.linkShared });
     setPending(false);
@@ -326,7 +319,7 @@ export default function StartShell({
     } catch {
       /* noop */
     }
-    showToast("링크를 복사했어요");
+    showToast(tt("share.copied"));
   }
   function onOpenDoc() {
     if (!curProject) return;
@@ -375,41 +368,53 @@ export default function StartShell({
                 </span>
                 <span style={{ fontSize: 18, fontWeight: 700 }}>SyncDoc</span>
               </div>
-              <p style={{ fontSize: 13.5, color: "#8A857A", lineHeight: 1.6, margin: "0 0 22px" }}>
-                하나의 문서, 모든 직군 — 각자의 언어로.
+              <p style={{ fontSize: 13.5, color: "#8A857A", lineHeight: 1.6, margin: "0 0 14px" }}>
+                {tt("auth.tagline")}
               </p>
+              <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
+                {(["ko", "en", "ja"] as const).map((lg) => (
+                  <button
+                    key={lg}
+                    type="button"
+                    onClick={() => setLang(lg)}
+                    style={{ fontFamily: "inherit", cursor: "pointer", fontSize: 11, fontWeight: 600, borderRadius: 7, padding: "3px 9px", border: "1px solid " + (lang === lg ? "#C9D6F6" : "#E0DCD2"), background: lang === lg ? "#EDF1FE" : "#fff", color: lang === lg ? "#2D4FD4" : "#9A958A" }}
+                  >
+                    {lg === "ko" ? "한국어" : lg === "en" ? "English" : "日本語"}
+                  </button>
+                ))}
+              </div>
 
               {screen === "signup" ? (
                 <>
-                  <p style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px" }}>회원가입</p>
-                  <label style={labelStyle}>이름</label>
+                  <p style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px" }}>{tt("auth.signupTitle")}</p>
+                  <label style={labelStyle}>{tt("auth.name")}</label>
                   <input value={suName} onChange={(e) => setSuName(e.target.value)} style={inputStyle} />
-                  <label style={{ ...labelStyle, margin: "14px 0 6px" }}>이메일</label>
+                  <label style={{ ...labelStyle, margin: "14px 0 6px" }}>{tt("auth.email")}</label>
                   <input value={suEmail} onChange={(e) => setSuEmail(e.target.value)} placeholder="name@team.co" style={inputStyle} />
-                  <label style={{ ...labelStyle, margin: "14px 0 6px" }}>비밀번호</label>
+                  <label style={{ ...labelStyle, margin: "14px 0 6px" }}>{tt("auth.password")}</label>
                   <input type="password" value={suPw} onChange={(e) => setSuPw(e.target.value)} placeholder="••••••••" style={inputStyle} />
                   <button className="sd-primary" onClick={doSignup} disabled={pending} style={{ ...primaryBtn, marginTop: 22, opacity: pending ? 0.7 : 1 }}>
-                    가입하고 시작
+                    {tt("auth.signupStart")}
                   </button>
                   <p style={{ textAlign: "center", fontSize: 13, color: "#8A857A", margin: "16px 0 0" }}>
-                    이미 계정이 있으신가요? <button onClick={goLogin} style={linkBtn}>로그인</button>
+                    {tt("auth.haveAccount")} <button onClick={goLogin} style={linkBtn}>{tt("auth.toLogin")}</button>
                   </p>
                 </>
               ) : (
                 <>
-                  <p style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px" }}>로그인</p>
-                  <label style={labelStyle}>이메일</label>
+                  <p style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px" }}>{tt("auth.loginTitle")}</p>
+                  <label style={labelStyle}>{tt("auth.email")}</label>
                   <input value={liEmail} onChange={(e) => setLiEmail(e.target.value)} placeholder="mina@team.co" style={inputStyle} />
-                  <label style={{ ...labelStyle, margin: "14px 0 6px" }}>비밀번호</label>
+                  <label style={{ ...labelStyle, margin: "14px 0 6px" }}>{tt("auth.password")}</label>
                   <input type="password" value={liPw} onChange={(e) => setLiPw(e.target.value)} placeholder="••••••••" style={inputStyle} />
                   <button className="sd-primary" onClick={doLogin} disabled={pending} style={{ ...primaryBtn, marginTop: 22, opacity: pending ? 0.7 : 1 }}>
-                    로그인
+                    {tt("auth.loginBtn")}
                   </button>
                   <p style={{ textAlign: "center", fontSize: 13, color: "#8A857A", margin: "16px 0 0" }}>
-                    처음이신가요? <button onClick={goSignup} style={linkBtn}>회원가입</button>
+                    {tt("auth.firstTime")} <button onClick={goSignup} style={linkBtn}>{tt("auth.toSignup")}</button>
                   </p>
                   <p style={{ textAlign: "center", fontSize: 11.5, color: "#9A958A", margin: "12px 0 0" }}>
-                    데모: mina@team.co · jun@team.co · sora@team.co (비밀번호 demo1234)
+                    {tt("auth.demo")}
                   </p>
                 </>
               )}
@@ -441,12 +446,12 @@ export default function StartShell({
                       <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{account.name}</p>
                       <p style={{ fontSize: 11.5, color: "#2D4FD4", margin: "2px 0 12px", fontFamily: MONO }}>{account.email}</p>
                       <button className="sd-menuitem" onClick={() => { setScreen("home"); setHeaderMenu(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "none", border: 0, borderRadius: 9, padding: "8px 10px", fontSize: 13, color: "#3C3A34", cursor: "pointer", fontFamily: "inherit", textAlign: "start" }}>
-                        <Send />받은 초대
+                        <Send />{tt("nav.invites")}
                         <span style={{ marginInlineStart: "auto", fontSize: 11, fontWeight: 700, color: "#2D4FD4", background: "#EDF1FE", borderRadius: 99, padding: "1px 8px" }}>{invites.length}</span>
                       </button>
                       <form action={logoutToStart}>
                         <button type="submit" className="sd-menuitem" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, background: "none", border: 0, borderRadius: 9, padding: "8px 10px", fontSize: 13, color: "#3C3A34", cursor: "pointer", fontFamily: "inherit", textAlign: "start", marginTop: 2 }}>
-                          <LogoutIcon />로그아웃
+                          <LogoutIcon />{tt("nav.logout")}
                         </button>
                       </form>
                     </div>
@@ -460,29 +465,29 @@ export default function StartShell({
               {screen === "home" && (
                 <>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-                    <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>내 프로젝트</h1>
+                    <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>{tt("home.myProjects")}</h1>
                     <button className="sd-primary" onClick={openCreate} style={{ marginInlineStart: "auto", display: "inline-flex", alignItems: "center", gap: 7, background: "#2D4FD4", color: "#fff", border: 0, borderRadius: 11, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 #1F3680" }}>
-                      <Plus />새 프로젝트
+                      <Plus />{tt("home.newProject")}
                     </button>
                   </div>
 
                   {projects.length === 0 ? (
                     <p style={{ border: "1px dashed #D7D2C6", borderRadius: 14, padding: "40px 0", textAlign: "center", fontSize: 13.5, color: "#9A958A", background: "#fff" }}>
-                      아직 프로젝트가 없습니다. 오른쪽 위 <strong>새 프로젝트</strong>로 시작하세요.
+                      {tt("home.noProjects")}
                     </p>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       {projects.map((p) => (
                         <div key={p.id} className="sd-card" style={{ display: "flex", alignItems: "center", gap: 14, background: "#fff", border: "1px solid #E9E6DE", borderRadius: 14, padding: "16px 20px", boxShadow: "0 1px 2px rgba(40,36,26,0.04)" }}>
-                          <button onClick={() => openProjectChat(p)} title="대화 열기" style={{ flex: 1, minWidth: 0, textAlign: "start", background: "none", border: 0, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 6 }}>
+                          <button onClick={() => openProjectChat(p)} title={tt("home.openChat")} style={{ flex: 1, minWidth: 0, textAlign: "start", background: "none", border: 0, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 6 }}>
                             <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                               <span style={{ fontSize: 16.5, fontWeight: 700, letterSpacing: "-0.01em" }}>{p.title}</span>
-                              <span style={roleChip(p.myRole)}>{ROLE[p.myRole].label}</span>
+                              <span style={roleChip(p.myRole)}>{roleLabelL(p.myRole, lang)}</span>
                             </span>
-                            <span style={{ fontSize: 12.5, color: "#9A958A" }}>{PERM[p.myPerm]} · 멤버 {p.members.length}</span>
+                            <span style={{ fontSize: 12.5, color: "#9A958A" }}>{permLabelL(p.myPerm, lang)} · {tt("home.memberCount")} {p.members.length}</span>
                           </button>
-                          <button onClick={() => manageProject(p)} title="팀원·초대·공유 관리" style={{ flexShrink: 0, background: "#fff", border: "1px solid #E0DCD2", borderRadius: 9, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, color: "#6E6A60", cursor: "pointer", fontFamily: "inherit" }}>관리</button>
-                          <button onClick={() => openProjectChat(p)} title="대화 열기" aria-label="대화 열기" style={{ flexShrink: 0, background: "#2D4FD4", border: 0, borderRadius: 10, width: 36, height: 36, display: "grid", placeItems: "center", cursor: "pointer" }}>
+                          <button onClick={() => manageProject(p)} title={tt("home.manage")} style={{ flexShrink: 0, background: "#fff", border: "1px solid #E0DCD2", borderRadius: 9, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, color: "#6E6A60", cursor: "pointer", fontFamily: "inherit" }}>{tt("home.manage")}</button>
+                          <button onClick={() => openProjectChat(p)} title={tt("home.openChat")} aria-label={tt("home.openChat")} style={{ flexShrink: 0, background: "#2D4FD4", border: 0, borderRadius: 10, width: 36, height: 36, display: "grid", placeItems: "center", cursor: "pointer" }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.5 0-3-.4-4.2-1.1L3 20l1.1-5.3A8.5 8.5 0 1 1 21 11.5z" />
                             </svg>
@@ -494,16 +499,16 @@ export default function StartShell({
 
                   {invites.length > 0 && (
                     <>
-                      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A958A", margin: "34px 0 12px" }}>받은 초대</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A958A", margin: "34px 0 12px" }}>{tt("home.received")}</p>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {invites.map((iv) => (
                           <div key={iv.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #E9E6DE", borderRadius: 13, padding: "14px 18px" }}>
                             <span style={{ minWidth: 0 }}>
                               <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{iv.title}</span>
-                              <span style={{ display: "block", fontSize: 12.5, color: "#9A958A", marginTop: 2 }}>{iv.from} · {ROLENAME[iv.role]}</span>
+                              <span style={{ display: "block", fontSize: 12.5, color: "#9A958A", marginTop: 2 }}>{iv.from} · {roleNameL(iv.role, lang)}</span>
                             </span>
-                            <button className="sd-primary" onClick={() => doAccept(iv)} disabled={pending} style={{ marginInlineStart: "auto", background: "#2D4FD4", color: "#fff", border: 0, borderRadius: 9, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>수락</button>
-                            <button onClick={() => doDecline(iv)} disabled={pending} style={{ background: "none", border: 0, color: "#9A958A", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>거절</button>
+                            <button className="sd-primary" onClick={() => doAccept(iv)} disabled={pending} style={{ marginInlineStart: "auto", background: "#2D4FD4", color: "#fff", border: 0, borderRadius: 9, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{tt("home.accept")}</button>
+                            <button onClick={() => doDecline(iv)} disabled={pending} style={{ background: "none", border: 0, color: "#9A958A", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{tt("home.decline")}</button>
                           </div>
                         ))}
                       </div>
@@ -515,18 +520,18 @@ export default function StartShell({
               {/* CREATE */}
               {screen === "create" && (
                 <>
-                  <button onClick={goHome} style={backBtn}>← 내 프로젝트</button>
-                  <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", margin: "14px 0 22px" }}>새 프로젝트</h1>
+                  <button onClick={goHome} style={backBtn}>{tt("pj.back")}</button>
+                  <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", margin: "14px 0 22px" }}>{tt("create.title")}</h1>
                   <div style={{ maxWidth: 520, background: "#fff", border: "1px solid #E9E6DE", borderRadius: 16, padding: 26 }}>
-                    <label style={labelStyle}>프로젝트 제목</label>
-                    <input value={cpTitle} onChange={(e) => setCpTitle(e.target.value)} placeholder="예: 팝업스토어 오픈 프로젝트" style={inputStyle} />
-                    <label style={{ ...labelStyle, margin: "18px 0 6px" }}>이 프로젝트에서 내 직군</label>
+                    <label style={labelStyle}>{lang === "en" ? "Project title" : lang === "ja" ? "プロジェクト名" : "프로젝트 제목"}</label>
+                    <input value={cpTitle} onChange={(e) => setCpTitle(e.target.value)} placeholder={tt("create.titlePh")} style={inputStyle} />
+                    <label style={{ ...labelStyle, margin: "18px 0 6px" }}>{tt("create.myRole")}</label>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {ROLE_ORDER.map((id, i, a) => (
-                        <button key={id} onClick={() => setCpRole(id)} style={seg(cpRole === id, i === 0 ? "l" : i === a.length - 1 ? "r" : "m")}>{ROLE[id].label}</button>
+                        <button key={id} onClick={() => setCpRole(id)} style={seg(cpRole === id, i === 0 ? "l" : i === a.length - 1 ? "r" : "m")}>{roleLabelL(id, lang)}</button>
                       ))}
                     </div>
-                    <button className="sd-primary" onClick={doCreate} disabled={pending} style={{ ...primaryBtn, marginTop: 24, opacity: pending ? 0.7 : 1 }}>프로젝트 만들기</button>
+                    <button className="sd-primary" onClick={doCreate} disabled={pending} style={{ ...primaryBtn, marginTop: 24, opacity: pending ? 0.7 : 1 }}>{tt("create.make")}</button>
                   </div>
                 </>
               )}
@@ -534,22 +539,22 @@ export default function StartShell({
               {/* PROJECT */}
               {screen === "project" && curProject && (
                 <>
-                  <button onClick={goHome} style={backBtn}>← 내 프로젝트</button>
+                  <button onClick={goHome} style={backBtn}>{tt("pj.back")}</button>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0 6px", flexWrap: "wrap" }}>
                     <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>{curProject.title}</h1>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "#6E6A60", background: "#F4F2EC", borderRadius: 7, padding: "3px 9px" }}>{typeName(curProject.type)}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "#6E6A60", background: "#F4F2EC", borderRadius: 7, padding: "3px 9px" }}>{tt("type.project")}</span>
                     <button className="sd-primary" onClick={onOpenDoc} style={{ marginInlineStart: "auto", display: "inline-flex", alignItems: "center", gap: 7, background: "#2D4FD4", color: "#fff", border: 0, cursor: "pointer", fontFamily: "inherit", borderRadius: 11, padding: "10px 18px", fontSize: 14, fontWeight: 600, boxShadow: "0 3px 0 #1F3680" }}>
-                      <Book size={15} />문서 열기
+                      <Book size={15} />{tt("home.openDoc")}
                     </button>
                   </div>
                   <p style={{ fontSize: 13, color: "#9A958A", margin: "0 0 26px" }}>
-                    내 직군 <strong style={{ color: "#6E6A60" }}>{ROLENAME[curProject.myRole]}</strong> · 내 권한 <strong style={{ color: "#6E6A60" }}>{PERM[curProject.myPerm]}</strong>
+                    {tt("pj.myRole")} <strong style={{ color: "#6E6A60" }}>{roleNameL(curProject.myRole, lang)}</strong> · {tt("pj.myPerm")} <strong style={{ color: "#6E6A60" }}>{permLabelL(curProject.myPerm, lang)}</strong>
                   </p>
 
                   <div className="sd-grid-detail">
                     {/* members */}
                     <div style={{ background: "#fff", border: "1px solid #E9E6DE", borderRadius: 16, padding: "20px 22px" }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A958A", margin: "0 0 14px" }}>팀원 {curProject.members.length}</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A958A", margin: "0 0 14px" }}>{tt("members")} {curProject.members.length}</p>
                       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                         {curProject.members.map((m: MemberInfo) => (
                           <div key={m.userId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -561,8 +566,8 @@ export default function StartShell({
                               <span style={{ display: "block", fontSize: 11, color: "#9A958A", fontFamily: MONO }}>{m.email}</span>
                             </span>
                             <span style={{ marginInlineStart: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                              <span style={roleChip(m.role)}>{ROLE[m.role].label}</span>
-                              <span style={{ fontSize: 11.5, color: "#8A857A" }}>{PERM[m.perm]}</span>
+                              <span style={roleChip(m.role)}>{roleLabelL(m.role, lang)}</span>
+                              <span style={{ fontSize: 11.5, color: "#8A857A" }}>{permLabelL(m.perm, lang)}</span>
                             </span>
                           </div>
                         ))}
@@ -573,35 +578,35 @@ export default function StartShell({
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                       {canInvite && (
                         <div style={{ background: "#fff", border: "1px solid #E9E6DE", borderRadius: 16, padding: "18px 20px" }}>
-                          <p style={{ fontSize: 13.5, fontWeight: 700, margin: "0 0 12px" }}>팀원 초대</p>
-                          <input value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder="이메일" style={inputStyle} />
-                          <p style={{ fontSize: 11, fontWeight: 600, color: "#9A958A", margin: "14px 0 6px" }}>직군</p>
+                          <p style={{ fontSize: 13.5, fontWeight: 700, margin: "0 0 12px" }}>{tt("mem.invite")}</p>
+                          <input value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder={tt("mem.email")} style={inputStyle} />
+                          <p style={{ fontSize: 11, fontWeight: 600, color: "#9A958A", margin: "14px 0 6px" }}>{tt("mem.role")}</p>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                             {ROLE_ORDER.map((id, i, a) => (
-                              <button key={id} onClick={() => setInvRole(id)} style={seg(invRole === id, i === 0 ? "l" : i === a.length - 1 ? "r" : "m")}>{ROLE[id].label}</button>
+                              <button key={id} onClick={() => setInvRole(id)} style={seg(invRole === id, i === 0 ? "l" : i === a.length - 1 ? "r" : "m")}>{roleLabelL(id, lang)}</button>
                             ))}
                           </div>
-                          <p style={{ fontSize: 11, fontWeight: 600, color: "#9A958A", margin: "14px 0 6px" }}>권한</p>
+                          <p style={{ fontSize: 11, fontWeight: 600, color: "#9A958A", margin: "14px 0 6px" }}>{tt("mem.perm")}</p>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            {PERM_DEFS.map(([id, label, desc]) => {
+                            {PERM_DEFS.map(({ id, descKey }) => {
                               const active = invPerm === id;
                               return (
                                 <button key={id} onClick={() => setInvPerm(id)} style={{ textAlign: "start", fontFamily: "inherit", cursor: "pointer", borderRadius: 9, padding: "9px 12px", border: "1px solid " + (active ? "#C9D6F6" : "#E0DCD2"), background: active ? "#EDF1FE" : "#fff", color: active ? "#2D4FD4" : "#3C3A34", fontSize: 12.5, fontWeight: 600 }}>
-                                  {label}
-                                  <span style={{ display: "block", fontSize: 11, fontWeight: 400, opacity: 0.8, marginTop: 1 }}>{desc}</span>
+                                  {permLabelL(id, lang)}
+                                  <span style={{ display: "block", fontSize: 11, fontWeight: 400, opacity: 0.8, marginTop: 1 }}>{tt(descKey)}</span>
                                 </button>
                               );
                             })}
                           </div>
-                          <button className="sd-primary" onClick={doInvite} disabled={pending} style={{ ...primaryBtn, marginTop: 16, opacity: pending ? 0.7 : 1 }}>초대 보내기</button>
+                          <button className="sd-primary" onClick={doInvite} disabled={pending} style={{ ...primaryBtn, marginTop: 16, opacity: pending ? 0.7 : 1 }}>{tt("mem.send")}</button>
                         </div>
                       )}
 
                       <div style={{ background: "#fff", border: "1px solid #E9E6DE", borderRadius: 16, padding: "18px 20px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <span style={{ minWidth: 0 }}>
-                            <span style={{ display: "block", fontSize: 13.5, fontWeight: 700 }}>링크 공유 뷰어</span>
-                            <span style={{ display: "block", fontSize: 11.5, color: "#9A958A", marginTop: 2 }}>링크가 있으면 누구나 읽기</span>
+                            <span style={{ display: "block", fontSize: 13.5, fontWeight: 700 }}>{tt("share.title")}</span>
+                            <span style={{ display: "block", fontSize: 11.5, color: "#9A958A", marginTop: 2 }}>{tt("share.sub")}</span>
                           </span>
                           <button onClick={doToggleLink} disabled={!canInvite || pending} style={{ marginInlineStart: "auto", flexShrink: 0, width: 42, height: 24, borderRadius: 99, border: 0, cursor: canInvite ? "pointer" : "not-allowed", padding: 2, background: curProject.linkShared ? "#2D4FD4" : "#D7D2C6", display: "flex", justifyContent: curProject.linkShared ? "flex-end" : "flex-start", transition: "background 0.15s", opacity: canInvite ? 1 : 0.6 }}>
                             <span style={{ width: 20, height: 20, borderRadius: 99, background: "#fff", display: "block" }} />
@@ -610,7 +615,7 @@ export default function StartShell({
                         {curProject.linkShared && (
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, background: "#F4F2EC", border: "1px solid #E6E3DC", borderRadius: 9, padding: "8px 11px" }}>
                             <span style={{ flex: 1, minWidth: 0, fontFamily: MONO, fontSize: 11, color: "#6E6A60", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{shareLink}</span>
-                            <button onClick={onCopyLink} style={{ flexShrink: 0, background: "#fff", border: "1px solid #E0DCD2", borderRadius: 7, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, color: "#6E6A60", cursor: "pointer", fontFamily: "inherit" }}>복사</button>
+                            <button onClick={onCopyLink} style={{ flexShrink: 0, background: "#fff", border: "1px solid #E0DCD2", borderRadius: 7, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, color: "#6E6A60", cursor: "pointer", fontFamily: "inherit" }}>{tt("share.copy")}</button>
                           </div>
                         )}
                       </div>

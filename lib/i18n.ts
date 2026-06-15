@@ -31,16 +31,23 @@ type Key =
   // 멤버/초대
   | "mem.invite" | "mem.email" | "mem.role" | "mem.perm" | "mem.send"
   | "mem.added" | "mem.sent" | "mem.needEmail" | "mem.removeConfirm" | "mem.me"
+  // 인증 (로그인/회원가입)
+  | "auth.tagline" | "auth.loginTitle" | "auth.signupTitle" | "auth.name"
+  | "auth.email" | "auth.password" | "auth.signupStart" | "auth.haveAccount"
+  | "auth.toLogin" | "auth.loginBtn" | "auth.firstTime" | "auth.toSignup" | "auth.demo"
   // 홈/생성 (StartShell)
   | "home.myProjects" | "home.newProject" | "home.received" | "home.accept"
-  | "home.decline" | "home.openDoc" | "home.memberCount" | "home.noProjects"
+  | "home.decline" | "home.openDoc" | "home.openChat" | "home.manage"
+  | "home.memberCount" | "home.noProjects"
   | "create.title" | "create.titlePh" | "create.myRole" | "create.make"
-  | "share.title" | "share.sub" | "share.copy"
+  | "share.title" | "share.sub" | "share.copy" | "share.copied"
   | "nav.invites" | "nav.logout"
+  | "toast.created" | "toast.joined" | "toast.noOwnerPerm"
   // 역할/권한/타입
   | "role.planner" | "role.developer" | "role.designer" | "role.ops"
   | "roleName.planner" | "roleName.developer" | "roleName.designer" | "roleName.ops"
   | "perm.owner" | "perm.editor" | "perm.viewer" | "perm.link"
+  | "perm.editorDesc" | "perm.viewerDesc" | "perm.linkDesc"
   | "type.project";
 
 const DICT: Record<Lang, Record<Key, string>> = {
@@ -78,6 +85,15 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "create.title": "새 프로젝트", "create.titlePh": "예: 팝업스토어 오픈 프로젝트", "create.myRole": "이 프로젝트에서 내 직군", "create.make": "프로젝트 만들기",
     "share.title": "링크 공유 뷰어", "share.sub": "링크가 있으면 누구나 읽기", "share.copy": "복사",
     "nav.invites": "받은 초대", "nav.logout": "로그아웃",
+    "auth.tagline": "하나의 문서, 모든 직군 — 각자의 언어로.",
+    "auth.loginTitle": "로그인", "auth.signupTitle": "회원가입",
+    "auth.name": "이름", "auth.email": "이메일", "auth.password": "비밀번호",
+    "auth.signupStart": "가입하고 시작", "auth.haveAccount": "이미 계정이 있으신가요?", "auth.toLogin": "로그인",
+    "auth.loginBtn": "로그인", "auth.firstTime": "처음이신가요?", "auth.toSignup": "회원가입",
+    "auth.demo": "데모: mina@team.co · jun@team.co · sora@team.co (비밀번호 demo1234)",
+    "home.openChat": "대화 열기", "home.manage": "관리", "share.copied": "링크를 복사했어요",
+    "toast.created": "프로젝트를 만들었어요", "toast.joined": "프로젝트에 합류했어요", "toast.noOwnerPerm": "변경 권한이 없습니다 (소유자만 가능)",
+    "perm.editorDesc": "작성·합의·서명", "perm.viewerDesc": "초대된 사람만 읽기·댓글", "perm.linkDesc": "링크가 있으면 누구나 읽기",
     "role.planner": "기획", "role.developer": "개발", "role.designer": "디자인", "role.ops": "운영",
     "roleName.planner": "기획자", "roleName.developer": "개발자", "roleName.designer": "디자이너", "roleName.ops": "운영자",
     "perm.owner": "소유자", "perm.editor": "편집자", "perm.viewer": "제한된 뷰어", "perm.link": "링크 뷰어",
@@ -117,6 +133,15 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "create.title": "New project", "create.titlePh": "e.g. Pop-up store launch", "create.myRole": "My role in this project", "create.make": "Create project",
     "share.title": "Link-share viewer", "share.sub": "Anyone with the link can read", "share.copy": "Copy",
     "nav.invites": "Received invites", "nav.logout": "Log out",
+    "auth.tagline": "One document, every role — each in their own language.",
+    "auth.loginTitle": "Log in", "auth.signupTitle": "Sign up",
+    "auth.name": "Name", "auth.email": "Email", "auth.password": "Password",
+    "auth.signupStart": "Sign up & start", "auth.haveAccount": "Already have an account?", "auth.toLogin": "Log in",
+    "auth.loginBtn": "Log in", "auth.firstTime": "First time here?", "auth.toSignup": "Sign up",
+    "auth.demo": "Demo: mina@team.co · jun@team.co · sora@team.co (password demo1234)",
+    "home.openChat": "Open chat", "home.manage": "Manage", "share.copied": "Link copied",
+    "toast.created": "Project created", "toast.joined": "Joined the project", "toast.noOwnerPerm": "No permission (owner only)",
+    "perm.editorDesc": "write · agree · sign", "perm.viewerDesc": "invited only: read · comment", "perm.linkDesc": "anyone with the link can read",
     "role.planner": "Planning", "role.developer": "Dev", "role.designer": "Design", "role.ops": "Ops",
     "roleName.planner": "Planner", "roleName.developer": "Developer", "roleName.designer": "Designer", "roleName.ops": "Ops",
     "perm.owner": "Owner", "perm.editor": "Editor", "perm.viewer": "Restricted viewer", "perm.link": "Link viewer",
@@ -156,6 +181,15 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "create.title": "新規プロジェクト", "create.titlePh": "例：ポップアップストア立ち上げ", "create.myRole": "このプロジェクトでの自分の職種", "create.make": "プロジェクトを作成",
     "share.title": "リンク共有ビューア", "share.sub": "リンクがあれば誰でも閲覧可", "share.copy": "コピー",
     "nav.invites": "受け取った招待", "nav.logout": "ログアウト",
+    "auth.tagline": "ひとつの文書、すべての職種 — それぞれの言語で。",
+    "auth.loginTitle": "ログイン", "auth.signupTitle": "新規登録",
+    "auth.name": "名前", "auth.email": "メール", "auth.password": "パスワード",
+    "auth.signupStart": "登録して開始", "auth.haveAccount": "すでにアカウントをお持ちですか？", "auth.toLogin": "ログイン",
+    "auth.loginBtn": "ログイン", "auth.firstTime": "はじめてですか？", "auth.toSignup": "新規登録",
+    "auth.demo": "デモ: mina@team.co · jun@team.co · sora@team.co (パスワード demo1234)",
+    "home.openChat": "会話を開く", "home.manage": "管理", "share.copied": "リンクをコピーしました",
+    "toast.created": "プロジェクトを作成しました", "toast.joined": "プロジェクトに参加しました", "toast.noOwnerPerm": "変更権限がありません（オーナーのみ）",
+    "perm.editorDesc": "作成・合意・署名", "perm.viewerDesc": "招待された人のみ閲覧・コメント", "perm.linkDesc": "リンクがあれば誰でも閲覧",
     "role.planner": "企画", "role.developer": "開発", "role.designer": "デザイン", "role.ops": "運用",
     "roleName.planner": "企画者", "roleName.developer": "開発者", "roleName.designer": "デザイナー", "roleName.ops": "運用者",
     "perm.owner": "オーナー", "perm.editor": "編集者", "perm.viewer": "制限付きビューア", "perm.link": "リンクビューア",
