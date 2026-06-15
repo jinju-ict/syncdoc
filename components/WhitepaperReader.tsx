@@ -197,7 +197,7 @@ export default function WhitepaperReader({
                     <p style={{ fontSize: 13.5, lineHeight: 1.6, color: "#9A958A", margin: "0 0 12px" }}>
                       {t(lang, "notWritten")}
                     </p>
-                    <a href={`/doc/${meta.docId}?lens=side&sec=${s.key}`} style={drillBtn}>
+                    <a href={`/doc/${meta.docId}?lens=conv`} style={drillBtn}>
                       + {t(lang, "startDiscussion")}
                     </a>
                   </div>
@@ -210,7 +210,7 @@ export default function WhitepaperReader({
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                             <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>{it.title}</h3>
                             <span style={{ ...chipBase, ...chip.style, marginInlineStart: "auto" }}>{chip.label}</span>
-                            <a href={`/doc/${meta.docId}?lens=side&sec=${s.key}`} style={drillLink} title="이 절의 대화 보기·이어가기">
+                            <a href={`/doc/${meta.docId}?lens=conv`} style={drillLink} title="이 절의 대화 보기·이어가기">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginInlineEnd: 4, verticalAlign: "-1px" }}>
                                 <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.5 0-3-.4-4.2-1.1L3 20l1.1-5.3A8.5 8.5 0 1 1 21 11.5z" />
                               </svg>

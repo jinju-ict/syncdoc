@@ -4,17 +4,11 @@ import { getSession } from "@/lib/session";
 import * as repo from "@/lib/repo";
 import { logout } from "@/app/login/actions";
 import AbstractHeader from "@/components/AbstractHeader";
-import Timeline from "@/components/Timeline";
-import DraftEditor from "@/components/DraftEditor";
 import ChatRoom from "@/components/ChatRoom";
 import LevelSelector from "@/components/LevelSelector";
 import ArchiveButton from "@/components/ArchiveButton";
 import WhitepaperReader from "@/components/WhitepaperReader";
 import DocLensShell from "@/components/DocLensShell";
-import DistillButton from "@/components/DistillButton";
-import DataLens, { type DataChunk } from "@/components/DataLens";
-import Markdown from "@/components/Markdown";
-import { CONTENT_SECTIONS, isSectionKey, sectionTitleL as secTitleL, type SectionKey } from "@/lib/sections";
 import { t } from "@/lib/i18n";
 import { after } from "next/server";
 import { runBlockJob, runSectionI18nJob, runClassifyJob, runDistillJob } from "@/lib/translation-runner";
@@ -60,17 +54,8 @@ export default async function DocPage({
   if (!Number.isInteger(docId)) notFound();
 
   const sp = await searchParams;
-  const lens: "paper" | "side" | "conv" | "data" =
-    sp.lens === "conv"
-      ? "conv"
-      : sp.lens === "side"
-        ? "side"
-        : sp.lens === "data"
-          ? "data"
-          : "paper";
-  const secRaw = typeof sp.sec === "string" ? sp.sec : undefined;
-  const sec: SectionKey | undefined = isSectionKey(secRaw) ? secRaw : undefined;
-  const sideSec: SectionKey = sec ?? "why";
+  // 렌즈 2종: 대화(채팅) = 입력, 백서 = 출력.
+  const lens: "conv" | "paper" = sp.lens === "conv" ? "conv" : "paper";
 
   const doc = repo.getDocument(docId);
   if (!doc) notFound();
@@ -153,135 +138,6 @@ export default async function DocPage({
         />
       </div>
     );
-  } else if (lens === "side") {
-    // 나란히: 한 절의 본문(좌) + 그 절의 대화(우)
-    const secMeta = CONTENT_SECTIONS.find((s) => s.key === sideSec)!;
-    const secBlocks = repo.getTimeline(docId, viewerProjectRole, viewerLang, sideSec);
-    const secDraft = repo.getOwnDraft(docId, session.uid, sideSec);
-    const secItems = sectionContent.filter((c) => c.sectionKey === sideSec);
-    // 증류 상태: 대화 없음 / 증류 필요(stale) / 최신(fresh)
-    const secSig = repo.sectionSourceSig(docId, sideSec);
-    const distilled = repo.getDistilledItem(docId, sideSec);
-    const distillState: "none" | "stale" | "fresh" =
-      secBlocks.length === 0
-        ? "none"
-        : distilled && distilled.sourceSig === secSig
-          ? "fresh"
-          : "stale";
-    lensContent = (
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-        {/* 좌: 절 본문 */}
-        <section className="rounded-2xl border border-[#E9E6DE] bg-white p-6">
-          <div className="mb-4 flex items-baseline gap-2">
-            <span className="font-mono text-sm text-[#2D4FD4]">{secMeta.num}</span>
-            <h2 className="text-lg font-bold tracking-tight">{secTitleL(sideSec, viewerLang)}</h2>
-            <span className="font-mono text-[11px] text-[#B7B1A4]">{secMeta.mnemonic}</span>
-          </div>
-          {secItems.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-[#DAD5C8] bg-[#FAF9F5] px-4 py-6 text-center text-sm text-[#9A958A]">
-              아직 작성 전입니다. 오른쪽 대화에서 논의하고 합의하면 이 자리에 채워집니다.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-5">
-              {secItems.map((it) => (
-                <div key={it.id}>
-                  <div className="mb-1 flex items-center gap-2">
-                    <h3 className="text-[15px] font-bold">{it.title}</h3>
-                    <span
-                      className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        it.status === "agreed"
-                          ? "bg-[#E8F5EC] text-[#1B7F45]"
-                          : "bg-[#EDF1FE] text-[#2D4FD4]"
-                      }`}
-                    >
-                      {it.status === "agreed" ? t(viewerLang, "agreed") : t(viewerLang, "discussing")}
-                    </span>
-                  </div>
-                  <div className="markdown-body text-[14.5px] leading-7 text-[#34322C]">
-                    <Markdown>{it.bodyMd}</Markdown>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* 우: 그 절의 대화 */}
-        <div className="min-w-0">
-          <div className="mb-3 flex items-center gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#9A958A]">
-              {secTitleL(sideSec, viewerLang)} · {t(viewerLang, "sectionConversation")}
-            </p>
-            {!archived && (
-              <span className="ml-auto">
-                <DistillButton docId={docId} sectionKey={sideSec} state={distillState} lang={viewerLang} />
-              </span>
-            )}
-          </div>
-          <Timeline blocks={secBlocks} viewerRole={viewerProjectRole} viewerLang={viewerLang} docId={docId} />
-          {!archived && (
-            <div className="mt-6">
-              <DraftEditor
-                docId={docId}
-                draft={secDraft ? { id: secDraft.id, sourceMd: secDraft.sourceMd } : null}
-                viewerRole={viewerProjectRole}
-                sectionKey={sideSec}
-                sectionLabel={secTitleL(sideSec, viewerLang)}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  } else if (lens === "data") {
-    // 데이터(RAG): 청크 시각화 + 메타데이터 질의 + 스키마 JSON
-    const tokensOf = (s: string) => Math.max(1, Math.round(s.length / 2));
-    const chunks: DataChunk[] = [
-      {
-        key: "meta",
-        sectionTitle: t(viewerLang, "docInfo"),
-        kind: t(viewerLang, "kind.meta"),
-        status: agreed ? "agreed" : "discussing",
-        tokens: 24,
-        title: doc.title,
-        preview: whitepaperMeta.statusLabel,
-      },
-    ];
-    for (const s of CONTENT_SECTIONS) {
-      const sTitle = secTitleL(s.key, viewerLang);
-      const items = sectionContent.filter((c) => c.sectionKey === s.key);
-      if (items.length === 0) {
-        chunks.push({ key: s.key, sectionTitle: sTitle, kind: t(viewerLang, "kind.empty"), status: "empty", tokens: 0, title: sTitle, preview: "" });
-      } else {
-        for (const it of items) {
-          chunks.push({
-            key: it.subKey ?? s.key,
-            sectionTitle: sTitle,
-            kind: t(viewerLang, "kind.section"),
-            status: it.status,
-            tokens: tokensOf(it.bodyMd),
-            title: it.title ?? sTitle,
-            preview: it.bodyMd.replace(/\s+/g, " ").slice(0, 80),
-          });
-        }
-      }
-    }
-    const schemaJson = JSON.stringify(
-      {
-        schema: "syncdoc.prd.v2",
-        doc_id: `doc-${docId}`,
-        sections: CONTENT_SECTIONS.map((s) => ({
-          key: s.key,
-          title: s.title,
-          items: sectionContent
-            .filter((c) => c.sectionKey === s.key)
-            .map((it) => ({ key: it.subKey ?? s.key, status: it.status })),
-        })),
-      },
-      null,
-      2
-    );
-    lensContent = <DataLens chunks={chunks} schemaJson={schemaJson} lang={viewerLang} />;
   } else {
     // 백서(기본): 목차 있는 산문 문서 + 문서 합의(서명·표지) 패널
     lensContent = (
@@ -403,7 +259,6 @@ export default async function DocPage({
         <DocLensShell
           docId={docId}
           activeLens={lens}
-          sec={sec}
           lang={viewerLang}
           caption={`${langLabel[viewerLang]} · ${roleLabel[viewerProjectRole]} ${t(viewerLang, "perspectiveSuffix")}`}
         >

@@ -522,23 +522,8 @@ Rules: preserve meaning exactly — do not add, remove, or reinterpret. Keep all
 }
 
 // ---------------------------------------------------------------------------
-// suggest — 초안 개선 제안 (구조화 출력 + zod 검증)
+// 제안 옵션 공용 스키마 (suggestReplies가 사용)
 // ---------------------------------------------------------------------------
-
-const SUGGEST_TOOL_NAME = "propose_improvements";
-
-const SUGGEST_SYSTEM = `너는 기획자↔개발자 협업 문서의 초안 검토자다.
-작성자가 '보내기' 전 초안 마크다운을 검토해, 누락·모호·개선 포인트를
-**2~4개의 객관식 제안**으로 만들어 구조화된 형식으로만 응답한다.
-
-[제안 작성 규칙]
-- 각 옵션은 작성자가 수락하면 초안에 그대로 덧붙이거나 반영할 수 있는,
-  자체 완결된 한국어 마크다운 문장 또는 짧은 단락이어야 한다.
-- 서로 다른 측면(누락된 조건, 모호한 수치, 예외 상황, 상대 직군이 물어볼 질문 등)을
-  다루는 옵션을 우선한다. 같은 내용의 변주는 금지.
-- 원문에 없는 결정을 대신 내리지 말 것 — 결정이 필요한 부분은
-  "~을(를) 명시하면 좋습니다: (예: …)" 형태로 제안한다.
-- 옵션은 최소 2개, 최대 4개.`;
 
 const SUGGEST_JSON_SCHEMA: JsonSchema = {
   type: "object",
@@ -556,27 +541,6 @@ const SUGGEST_JSON_SCHEMA: JsonSchema = {
 const suggestSchema = z.object({
   options: z.array(z.string().trim().min(1)).min(2),
 });
-
-/** 초안 단계 개선 제안 (객관식 옵션 목록) */
-export async function suggest(draftMd: string): Promise<SuggestResult> {
-  try {
-    const result = await chatStructured({
-      system: SUGGEST_SYSTEM,
-      user: `다음 초안 마크다운을 검토하고 개선 제안을 제출하라:\n\n${draftMd}`,
-      maxTokens: 8192,
-      op: "suggest",
-      toolName: SUGGEST_TOOL_NAME,
-      toolDescription:
-        "초안에 대한 객관식 개선 제안 목록을 제출한다. options의 각 항목은 초안에 그대로 반영 가능한 한국어 마크다운 텍스트.",
-      jsonSchema: SUGGEST_JSON_SCHEMA,
-      zodSchema: suggestSchema,
-    });
-    if (!result.ok) return result;
-    return { ok: true, options: result.data.options.slice(0, 4) };
-  } catch (e) {
-    return { ok: false, error: toError(e) };
-  }
-}
 
 // ---------------------------------------------------------------------------
 // suggestReplies — 대화 맥락 → 내가 다음에 보낼 만한 메시지 후보(객관식)

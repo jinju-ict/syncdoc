@@ -485,8 +485,7 @@ export function getTimeline(
 // 초안 (draft) — 작성자 본인 전용
 // ---------------------------------------------------------------------------
 
-/** 작성자 본인의 draft만 반환 (draft 가시성 규칙의 구현 지점) */
-/** 작성자 본인의 draft — 절(sectionKey)별로 구분. NULL = 전체/대화 렌즈 초안 */
+/** 작성자 본인의 draft만 반환 (draft 가시성 규칙의 구현 지점). saveDraft의 upsert에 쓰인다 */
 export function getOwnDraft(
   docId: number,
   authorId: number,
@@ -1827,38 +1826,6 @@ export function recordSectionI18n(
       )
       .run(contentId, lang);
   }
-}
-
-/** 한 절의 대화(잠긴 블록) — 증류 입력 */
-export function getSectionConversation(
-  docId: number,
-  sectionKey: SectionKey
-): { id: number; sourceMd: string; authorRole: ProjectRole }[] {
-  return sqlite
-    .prepare(
-      `SELECT id, source_md AS sourceMd,
-              COALESCE(author_project_role, author_role) AS authorRole
-       FROM blocks
-       WHERE doc_id = ? AND section_key = ? AND status = 'locked'
-       ORDER BY seq ASC`
-    )
-    .all(docId, sectionKey) as {
-    id: number;
-    sourceMd: string;
-    authorRole: ProjectRole;
-  }[];
-}
-
-/** 절 대화의 증류 캐시 시그니처 ("개수:최대블록id"). 대화가 바뀌면 값이 바뀐다 */
-export function sectionSourceSig(docId: number, sectionKey: SectionKey): string {
-  const r = sqlite
-    .prepare(
-      `SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS maxId
-       FROM blocks
-       WHERE doc_id = ? AND section_key = ? AND status = 'locked'`
-    )
-    .get(docId, sectionKey) as { c: number; maxId: number };
-  return `${r.c}:${r.maxId}`;
 }
 
 // ---------------------------------------------------------------------------

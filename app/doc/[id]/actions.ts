@@ -6,8 +6,8 @@ import { after } from "next/server";
 import { getSession } from "@/lib/session";
 import * as repo from "@/lib/repo";
 import type { Lang, ProjectRole, Role } from "@/lib/repo";
-import { isSectionKey, sectionLabel, type SectionKey } from "@/lib/sections";
-import { suggest, suggestReplies, distillSection as distillSectionAI } from "@/lib/ai";
+import { isSectionKey, type SectionKey } from "@/lib/sections";
+import { suggestReplies } from "@/lib/ai";
 import type { SuggestResult } from "@/lib/ai";
 import { saveUploadedFile, isTextMime, MAX_UPLOAD_BYTES } from "@/lib/uploads";
 import {
@@ -62,19 +62,6 @@ function dispatchTranslations(sent: repo.SentBlock): void {
       )
     )
   );
-}
-
-/** 초안 임시 저장 (upsert — 잠긴 블록에는 절대 닿지 않음). sectionKey=절 스코프 */
-export async function saveDraft(
-  docId: number,
-  md: string,
-  sectionKey: string | null = null
-): Promise<void> {
-  const session = await requireSession();
-  // 작성자의 직군 = 프로젝트 멤버십 4직군(없으면 계정 역할 폴백)
-  const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
-  repo.saveDraft(docId, { id: session.uid, role }, md, asSection(sectionKey));
-  revalidatePath(`/doc/${docId}`);
 }
 
 /**
@@ -150,31 +137,6 @@ export async function uploadAttachment(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-}
-
-/**
- * AI 개선 제안 (초안 단계, 비차단 — 보내기와 독립):
- * 제안 시점의 초안을 먼저 저장(upsert)해 보존한 뒤 suggest() 호출.
- * 수락 플로우는 클라이언트에서 선택 옵션을 초안 텍스트에 병합 →
- * 기존 saveDraft/sendBlock 경로를 그대로 사용한다 (작성자가 확인 후 보내기).
- */
-export async function requestSuggestions(
-  docId: number,
-  draftMd: string,
-  sectionKey: string | null = null
-): Promise<SuggestResult> {
-  const session = await requireSession();
-  if (draftMd.trim().length === 0) {
-    return { ok: false, error: "빈 초안에는 제안을 생성할 수 없습니다." };
-  }
-  try {
-    const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
-    repo.saveDraft(docId, { id: session.uid, role }, draftMd, asSection(sectionKey));
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-  // suggest는 throw하지 않는 규약 — {ok:false} 그대로 클라이언트에 전달
-  return suggest(draftMd);
 }
 
 /**
@@ -264,55 +226,3 @@ export async function retryTranslation(
   }
 }
 
-/**
- * 절 증류 — 그 절의 대화를 백서 산문으로 1회 증류해 저장한다.
- * 캐시: 같은 대화 시그니처면 AI를 다시 호출하지 않고 cached로 반환한다.
- */
-export async function distillSectionAction(
-  docId: number,
-  sectionKey: string
-): Promise<{ ok: true; cached: boolean } | { ok: false; error: string }> {
-  const session = await requireSession();
-  const sec = asSection(sectionKey);
-  if (!sec) return { ok: false, error: "알 수 없는 절입니다." };
-
-  // 권한 — 프로젝트 멤버이면서 편집자 이상
-  const projectId = repo.getProjectIdForDoc(docId);
-  if (projectId != null) {
-    const m = repo.getMembership(projectId, session.uid);
-    if (!m || (m.perm !== "owner" && m.perm !== "editor")) {
-      return { ok: false, error: "증류 권한이 없습니다 (편집자 이상)." };
-    }
-  }
-
-  const blocks = repo.getSectionConversation(docId, sec);
-  if (blocks.length === 0)
-    return { ok: false, error: "증류할 대화가 없습니다." };
-
-  const sig = repo.sectionSourceSig(docId, sec);
-  const existing = repo.getDistilledItem(docId, sec);
-  if (existing && existing.sourceSig === sig) {
-    return { ok: true, cached: true }; // 캐시 — AI 재호출 없음
-  }
-
-  const result = await distillSectionAI(
-    blocks.map((b) => ({ sourceMd: b.sourceMd, authorRole: b.authorRole })),
-    sectionLabel(sec)
-  );
-  if (!result.ok) return { ok: false, error: result.error };
-
-  repo.upsertDistilledSection(docId, sec, {
-    title: result.title,
-    bodyMd: result.bodyMd,
-    sig,
-  });
-  // 릴리스 스냅샷 append-only — 이번 합의로 무엇이 확정됐는지 박제
-  repo.addReleaseEntry(docId, {
-    sectionKey: sec,
-    title: result.title,
-    bodyMd: result.bodyMd,
-    createdBy: session.uid,
-  });
-  revalidatePath(`/doc/${docId}`);
-  return { ok: true, cached: false };
-}
