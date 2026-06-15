@@ -6,7 +6,7 @@ import { logout } from "@/app/login/actions";
 import AbstractHeader from "@/components/AbstractHeader";
 import Timeline from "@/components/Timeline";
 import DraftEditor from "@/components/DraftEditor";
-import CommentSidebar from "@/components/CommentSidebar";
+import ChatRoom from "@/components/ChatRoom";
 import LevelSelector from "@/components/LevelSelector";
 import ArchiveButton from "@/components/ArchiveButton";
 import WhitepaperReader from "@/components/WhitepaperReader";
@@ -78,13 +78,11 @@ export default async function DocPage({
   // 타임라인 = locked 블록만. draft는 작성자 본인 것만 별도 조회 (가시성 규칙).
   // 뷰어 직군: 렌더링·번역은 4직군(멤버십), 합의 게이트는 2축(getDocRole).
   const viewerProjectRole = repo.getDocProjectRole(docId, session.uid) ?? session.role;
-  const viewerCoreRole = repo.getDocRole(docId, session.uid) ?? session.role;
   const ctx = repo.getDocContext(docId); // 프로젝트 맥락(브레드크럼·종류)
   const kindLabel =
     ctx?.kind === "meeting" ? "회의록" : ctx?.kind === "release" ? "릴리스" : null;
   const viewerLang = repo.getUserLang(session.uid);
   const blocks = repo.getTimeline(docId, viewerProjectRole, viewerLang);
-  const draft = repo.getOwnDraft(docId, session.uid);
   const abstract = repo.getLatestAbstract(docId);
   const signatures = repo.listSignatures(docId); // 멤버별 합의 서명
   const myLevel = repo.getUserLevel(session.uid);
@@ -128,40 +126,22 @@ export default async function DocPage({
   // ----- 렌즈별 본문 -----
   let lensContent: React.ReactNode;
   if (lens === "conv") {
-    // 대화: 전체 타임라인 + 작성기(전체) + 댓글
+    // 채팅방(v0.2): 프로젝트당 하나의 통합 타임라인. 메신저형 입력.
     lensContent = (
-      <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
-        <main className="min-w-0 flex-1">
-          {archived && (
-            <div className="mb-6 rounded-md border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
-              📦 이 문서는 {doc.archivedAt ? doc.archivedAt.replace("T", " ").slice(0, 16) : ""}에
-              보관되었습니다. 모든 내용은 읽기 전용으로 보존됩니다.
-            </div>
-          )}
-          <AbstractHeader
-            abstract={abstract}
-            consensus={consensus}
-            viewerId={session.uid}
-            lang={viewerLang}
-            docId={docId}
-            readOnly={archived}
-          />
-          <Timeline blocks={blocks} viewerRole={viewerProjectRole} viewerLang={viewerLang} docId={docId} />
-          {!archived && (
-            <div className="mt-8">
-              <DraftEditor
-                docId={docId}
-                draft={draft ? { id: draft.id, sourceMd: draft.sourceMd } : null}
-                viewerRole={viewerProjectRole}
-              />
-            </div>
-          )}
-        </main>
-        <CommentSidebar
+      <div className="mx-auto w-full max-w-[760px]">
+        {archived && (
+          <div className="mb-6 rounded-md border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
+            📦 이 문서는 {doc.archivedAt ? doc.archivedAt.replace("T", " ").slice(0, 16) : ""}에
+            보관되었습니다. 모든 내용은 읽기 전용으로 보존됩니다.
+          </div>
+        )}
+        <ChatRoom
           blocks={blocks}
-          docId={docId}
+          members={members}
           viewerId={session.uid}
-          viewerRole={viewerCoreRole}
+          viewerRole={viewerProjectRole}
+          viewerLang={viewerLang}
+          docId={docId}
           readOnly={archived}
         />
       </div>
@@ -296,15 +276,25 @@ export default async function DocPage({
     );
     lensContent = <DataLens chunks={chunks} schemaJson={schemaJson} lang={viewerLang} />;
   } else {
-    // 백서(기본): 목차 있는 산문 문서
+    // 백서(기본): 목차 있는 산문 문서 + 문서 합의(서명·표지) 패널
     lensContent = (
-      <WhitepaperReader
-        meta={whitepaperMeta}
-        members={members}
-        signatures={signatures}
-        content={sectionContent}
-        lang={viewerLang}
-      />
+      <div>
+        <AbstractHeader
+          abstract={abstract}
+          consensus={consensus}
+          viewerId={session.uid}
+          lang={viewerLang}
+          docId={docId}
+          readOnly={archived}
+        />
+        <WhitepaperReader
+          meta={whitepaperMeta}
+          members={members}
+          signatures={signatures}
+          content={sectionContent}
+          lang={viewerLang}
+        />
+      </div>
     );
   }
 
