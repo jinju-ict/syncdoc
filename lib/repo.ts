@@ -16,10 +16,12 @@ import { sqlite } from "./db";
 import { toCoreRole } from "./schema";
 import type { SectionKey } from "./sections";
 import type {
+  AttachmentKind,
   DocKind,
   DocumentStatus,
   ExpertiseLevel,
   InviteStatus,
+  JoinRequestStatus,
   Lang,
   Permission,
   ProjectRole,
@@ -28,10 +30,12 @@ import type {
 } from "./schema";
 
 export type {
+  AttachmentKind,
   DocKind,
   DocumentStatus,
   ExpertiseLevel,
   InviteStatus,
+  JoinRequestStatus,
   Lang,
   Permission,
   ProjectRole,
@@ -1177,6 +1181,304 @@ export function setProjectLinkShared(projectId: number, shared: boolean): void {
   sqlite
     .prepare("UPDATE projects SET link_shared = ? WHERE id = ?")
     .run(shared ? 1 : 0, projectId);
+}
+
+// ---------------------------------------------------------------------------
+// v0.2 입장 승인 (join_requests) — 사용자→소유자 방향. 승인 시 멤버 합류.
+// ---------------------------------------------------------------------------
+
+export type JoinRequestInfo = {
+  id: number;
+  userId: number;
+  name: string;
+  email: string;
+  requestedRole: ProjectRole;
+  message: string | null;
+  createdAt: string;
+};
+
+/**
+ * 입장 요청 제출 (멱등). 이미 멤버면 아무 것도 하지 않고 alreadyMember.
+ * (project_id, user_id) 유니크 — 재요청 시 기존 행을 pending으로 되돌린다.
+ */
+export function createJoinRequest(args: {
+  projectId: number;
+  userId: number;
+  requestedRole: ProjectRole;
+  message?: string | null;
+}): { ok: boolean; alreadyMember: boolean } {
+  if (getMembership(args.projectId, args.userId)) {
+    return { ok: false, alreadyMember: true };
+  }
+  sqlite
+    .prepare(
+      `INSERT INTO join_requests (project_id, user_id, requested_role, message, status, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?)
+       ON CONFLICT(project_id, user_id) DO UPDATE SET
+         requested_role = excluded.requested_role,
+         message = excluded.message,
+         status = 'pending',
+         created_at = excluded.created_at,
+         decided_by = NULL,
+         decided_at = NULL`
+    )
+    .run(
+      args.projectId,
+      args.userId,
+      args.requestedRole,
+      args.message?.trim() || null,
+      now()
+    );
+  return { ok: true, alreadyMember: false };
+}
+
+/** 프로젝트의 대기 중 입장 요청 (소유자 관리용) */
+export function listJoinRequests(projectId: number): JoinRequestInfo[] {
+  return sqlite
+    .prepare(
+      `SELECT jr.id, jr.user_id AS userId,
+              COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS name,
+              COALESCE(u.email, '') AS email,
+              jr.requested_role AS requestedRole, jr.message, jr.created_at AS createdAt
+       FROM join_requests jr
+       JOIN users u ON u.id = jr.user_id
+       WHERE jr.project_id = ? AND jr.status = 'pending'
+       ORDER BY jr.id DESC`
+    )
+    .all(projectId) as JoinRequestInfo[];
+}
+
+/** 내 입장 요청 상태 (요청자 화면용) */
+export function getMyJoinRequest(
+  projectId: number,
+  userId: number
+): { status: JoinRequestStatus } | null {
+  const row = sqlite
+    .prepare(
+      "SELECT status FROM join_requests WHERE project_id = ? AND user_id = ?"
+    )
+    .get(projectId, userId) as { status: JoinRequestStatus } | undefined;
+  return row ?? null;
+}
+
+/**
+ * 입장 요청 승인 — 멤버십 추가(기본 권한 editor) + 요청 approved 표시. 단일 트랜잭션.
+ * 승인 권한 가드(소유자 여부)는 호출부(action)에서 확인한다.
+ */
+export function approveJoinRequest(
+  requestId: number,
+  projectId: number,
+  decidedBy: number,
+  perm: Permission = "editor"
+): { ok: boolean } {
+  const tx = sqlite.transaction(() => {
+    const jr = sqlite
+      .prepare(
+        "SELECT user_id AS userId, requested_role AS role, status FROM join_requests WHERE id = ? AND project_id = ?"
+      )
+      .get(requestId, projectId) as
+      | { userId: number; role: ProjectRole; status: JoinRequestStatus }
+      | undefined;
+    if (!jr || jr.status !== "pending") return { ok: false };
+    sqlite
+      .prepare(
+        `INSERT INTO project_members (project_id, user_id, role, perm, created_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, user_id) DO UPDATE SET role = excluded.role, perm = excluded.perm`
+      )
+      .run(projectId, jr.userId, jr.role, perm, now());
+    sqlite
+      .prepare(
+        "UPDATE join_requests SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ? AND status = 'pending'"
+      )
+      .run(decidedBy, now(), requestId);
+    return { ok: true };
+  });
+  return tx();
+}
+
+/** 입장 요청 거절 */
+export function rejectJoinRequest(
+  requestId: number,
+  projectId: number,
+  decidedBy: number
+): boolean {
+  const r = sqlite
+    .prepare(
+      "UPDATE join_requests SET status = 'rejected', decided_by = ?, decided_at = ? WHERE id = ? AND project_id = ? AND status = 'pending'"
+    )
+    .run(decidedBy, now(), requestId, projectId);
+  return r.changes > 0;
+}
+
+// ---------------------------------------------------------------------------
+// v0.2 채팅 첨부 (attachments) — 파일/링크. 텍스트·링크는 AI 근거로 사용.
+// ---------------------------------------------------------------------------
+
+export type AttachmentInfo = {
+  id: number;
+  messageId: number | null;
+  kind: AttachmentKind;
+  url: string | null;
+  path: string | null;
+  mime: string | null;
+  title: string | null;
+  textExcerpt: string | null;
+  createdAt: string;
+};
+
+export function addAttachment(args: {
+  docId: number;
+  messageId?: number | null;
+  kind: AttachmentKind;
+  url?: string | null;
+  path?: string | null;
+  mime?: string | null;
+  title?: string | null;
+  textExcerpt?: string | null;
+  uploadedBy?: number | null;
+}): number {
+  const r = sqlite
+    .prepare(
+      `INSERT INTO attachments (doc_id, message_id, kind, url, path, mime, title, text_excerpt, uploaded_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      args.docId,
+      args.messageId ?? null,
+      args.kind,
+      args.url ?? null,
+      args.path ?? null,
+      args.mime ?? null,
+      args.title ?? null,
+      args.textExcerpt ?? null,
+      args.uploadedBy ?? null,
+      now()
+    );
+  return Number(r.lastInsertRowid);
+}
+
+export function listAttachments(docId: number): AttachmentInfo[] {
+  return sqlite
+    .prepare(
+      `SELECT id, message_id AS messageId, kind, url, path, mime, title,
+              text_excerpt AS textExcerpt, created_at AS createdAt
+       FROM attachments WHERE doc_id = ? ORDER BY id ASC`
+    )
+    .all(docId) as AttachmentInfo[];
+}
+
+export function listAttachmentsForMessage(messageId: number): AttachmentInfo[] {
+  return sqlite
+    .prepare(
+      `SELECT id, message_id AS messageId, kind, url, path, mime, title,
+              text_excerpt AS textExcerpt, created_at AS createdAt
+       FROM attachments WHERE message_id = ? ORDER BY id ASC`
+    )
+    .all(messageId) as AttachmentInfo[];
+}
+
+// ---------------------------------------------------------------------------
+// v0.2 메시지 관련도·분류 (message_relevance) — AI 판정 + 사람 교정.
+// ---------------------------------------------------------------------------
+
+export type MessageRelevance = {
+  messageId: number;
+  aiSectionKey: string | null;
+  aiRelevance: number | null;
+  aiReason: string | null;
+  pinned: boolean;
+  excluded: boolean;
+  overrideSectionKey: string | null;
+};
+
+/** AI 분류 결과 기록 (사람 교정값 pinned/excluded/override는 보존) */
+export function upsertMessageRelevanceAI(args: {
+  messageId: number;
+  aiSectionKey: string | null;
+  aiRelevance: number | null;
+  aiReason?: string | null;
+}): void {
+  sqlite
+    .prepare(
+      `INSERT INTO message_relevance (message_id, ai_section_key, ai_relevance, ai_reason, classified_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(message_id) DO UPDATE SET
+         ai_section_key = excluded.ai_section_key,
+         ai_relevance = excluded.ai_relevance,
+         ai_reason = excluded.ai_reason,
+         classified_at = excluded.classified_at,
+         updated_at = excluded.updated_at`
+    )
+    .run(
+      args.messageId,
+      args.aiSectionKey,
+      args.aiRelevance,
+      args.aiReason ?? null,
+      now(),
+      now()
+    );
+}
+
+function ensureRelevanceRow(messageId: number): void {
+  sqlite
+    .prepare(
+      "INSERT OR IGNORE INTO message_relevance (message_id, updated_at) VALUES (?, ?)"
+    )
+    .run(messageId, now());
+}
+
+/** 사람 교정: 백서 반영 핀 토글 */
+export function setMessagePinned(messageId: number, pinned: boolean): void {
+  ensureRelevanceRow(messageId);
+  sqlite
+    .prepare(
+      "UPDATE message_relevance SET pinned = ?, updated_at = ? WHERE message_id = ?"
+    )
+    .run(pinned ? 1 : 0, now(), messageId);
+}
+
+/** 사람 교정: 백서 제외 토글 */
+export function setMessageExcluded(messageId: number, excluded: boolean): void {
+  ensureRelevanceRow(messageId);
+  sqlite
+    .prepare(
+      "UPDATE message_relevance SET excluded = ?, updated_at = ? WHERE message_id = ?"
+    )
+    .run(excluded ? 1 : 0, now(), messageId);
+}
+
+/** 사람 교정: 절 재분류 (NULL이면 AI 분류값 사용) */
+export function setMessageOverrideSection(
+  messageId: number,
+  sectionKey: string | null
+): void {
+  ensureRelevanceRow(messageId);
+  sqlite
+    .prepare(
+      "UPDATE message_relevance SET override_section_key = ?, updated_at = ? WHERE message_id = ?"
+    )
+    .run(sectionKey, now(), messageId);
+}
+
+export function getMessageRelevance(
+  messageId: number
+): MessageRelevance | null {
+  const row = sqlite
+    .prepare(
+      `SELECT message_id AS messageId, ai_section_key AS aiSectionKey,
+              ai_relevance AS aiRelevance, ai_reason AS aiReason,
+              pinned, excluded, override_section_key AS overrideSectionKey
+       FROM message_relevance WHERE message_id = ?`
+    )
+    .get(messageId) as
+    | (Omit<MessageRelevance, "pinned" | "excluded"> & {
+        pinned: number;
+        excluded: number;
+      })
+    | undefined;
+  if (!row) return null;
+  return { ...row, pinned: row.pinned === 1, excluded: row.excluded === 1 };
 }
 
 /**

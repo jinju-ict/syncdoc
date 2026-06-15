@@ -167,6 +167,53 @@ CREATE TABLE IF NOT EXISTS signatures (
   UNIQUE (doc_id, user_id)
 );
 
+-- v0.2 채팅 기반 백서: 메시지(blocks)별 관련도·절 분류.
+-- AI가 ai_section_key/ai_relevance를 채우고, 사람은 pinned(반영 강제)·excluded(제외)·
+-- override_section_key(절 재분류)로 교정한다. 증류는 이 표를 기준으로 메시지를 모은다.
+CREATE TABLE IF NOT EXISTS message_relevance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL REFERENCES blocks(id),
+  ai_section_key TEXT,
+  ai_relevance REAL,
+  ai_reason TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  excluded INTEGER NOT NULL DEFAULT 0,
+  override_section_key TEXT,
+  classified_at TEXT,
+  updated_at TEXT,
+  UNIQUE (message_id)
+);
+
+-- v0.2 채팅 첨부 — 파일/링크. 텍스트·링크는 AI가 읽어 백서 근거(text_excerpt)로 쓴다.
+CREATE TABLE IF NOT EXISTS attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_id INTEGER NOT NULL REFERENCES documents(id),
+  message_id INTEGER REFERENCES blocks(id),
+  kind TEXT NOT NULL CHECK (kind IN ('file','link')),
+  url TEXT,
+  path TEXT,
+  mime TEXT,
+  title TEXT,
+  text_excerpt TEXT,
+  uploaded_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+
+-- v0.2 입장 승인 — 사용자가 프로젝트(채팅방) 입장을 요청하고 소유자가 승인/거절한다.
+-- 기존 invites(소유자→사용자)와 반대 방향(사용자→소유자). 승인 시 project_members로 합류.
+CREATE TABLE IF NOT EXISTS join_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  requested_role TEXT NOT NULL CHECK (requested_role IN ('planner','developer','designer','ops')),
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  created_at TEXT NOT NULL,
+  decided_by INTEGER REFERENCES users(id),
+  decided_at TEXT,
+  UNIQUE (project_id, user_id)
+);
+
 -- 잠금 불변식 2중 방어 (계획 §핵심 불변식): 잠긴 블록은 UPDATE/DELETE 모두 영구 불가.
 -- 번역본은 별도 테이블(translations)이므로 이 트리거는 번역 기록을 막지 않는다.
 CREATE TRIGGER IF NOT EXISTS blocks_locked_immutable_update

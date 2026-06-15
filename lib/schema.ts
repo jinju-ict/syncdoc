@@ -8,6 +8,10 @@ export type ProjectRole = "planner" | "developer" | "designer" | "ops";
 export type Permission = "owner" | "editor" | "viewer" | "link";
 /** 초대 수명주기 */
 export type InviteStatus = "pending" | "accepted" | "declined";
+/** 입장 요청 수명주기 (사용자→소유자 방향, invites와 반대) */
+export type JoinRequestStatus = "pending" | "approved" | "rejected";
+/** 채팅 첨부 종류 — 업로드 파일 / 외부 링크 */
+export type AttachmentKind = "file" | "link";
 export type BlockStatus = "draft" | "locked";
 export type TranslationStatus = "pending" | "ok" | "failed";
 /** 사용자 숙련도 — 번역이 독자의 배경지식 수준에 맞춰 표현을 조절한다 */
@@ -204,4 +208,61 @@ export const abstracts = sqliteTable("abstracts", {
   abstractMd: text("abstract_md").notNull(),
   tocMd: text("toc_md").notNull(),
   generatedAt: text("generated_at").notNull(),
+});
+
+/**
+ * v0.2 채팅 기반 백서: 메시지(blocks)별 관련도·절 분류.
+ * AI가 ai_* 컬럼을 채우고, 사람은 pinned/excluded/override_section_key로 교정한다.
+ */
+export const messageRelevance = sqliteTable("message_relevance", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  messageId: integer("message_id")
+    .notNull()
+    .references(() => blocks.id),
+  aiSectionKey: text("ai_section_key"),
+  aiRelevance: integer("ai_relevance"),
+  aiReason: text("ai_reason"),
+  pinned: integer("pinned").notNull().default(0),
+  excluded: integer("excluded").notNull().default(0),
+  overrideSectionKey: text("override_section_key"),
+  classifiedAt: text("classified_at"),
+  updatedAt: text("updated_at"),
+});
+
+/** v0.2 채팅 첨부 — 파일/링크. 텍스트·링크는 AI가 읽어 백서 근거로 사용. */
+export const attachments = sqliteTable("attachments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  docId: integer("doc_id")
+    .notNull()
+    .references(() => documents.id),
+  messageId: integer("message_id").references(() => blocks.id),
+  kind: text("kind", { enum: ["file", "link"] }).notNull(),
+  url: text("url"),
+  path: text("path"),
+  mime: text("mime"),
+  title: text("title"),
+  textExcerpt: text("text_excerpt"),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  createdAt: text("created_at").notNull(),
+});
+
+/** v0.2 입장 승인 — 사용자→소유자 방향의 입장 요청 (invites와 반대 방향). */
+export const joinRequests = sqliteTable("join_requests", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  requestedRole: text("requested_role", {
+    enum: ["planner", "developer", "designer", "ops"],
+  }).notNull(),
+  message: text("message"),
+  status: text("status", { enum: ["pending", "approved", "rejected"] })
+    .notNull()
+    .default("pending"),
+  createdAt: text("created_at").notNull(),
+  decidedBy: integer("decided_by").references(() => users.id),
+  decidedAt: text("decided_at"),
 });
