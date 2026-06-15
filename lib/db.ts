@@ -214,6 +214,20 @@ CREATE TABLE IF NOT EXISTS join_requests (
   UNIQUE (project_id, user_id)
 );
 
+-- v0.2 번역 캐시 — 메시지 내용 해시(정규화) × 직군 × 언어 × 숙련도로 번역을 재사용.
+-- 같은 문장이 반복되면(정형 문구·재게시 등) AI를 다시 부르지 않는다(토큰·지연 절약).
+-- 블록 FK가 없는 전역 캐시 — block_translations(블록별 보관)와 별개.
+CREATE TABLE IF NOT EXISTS translation_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_hash TEXT NOT NULL,
+  target_role TEXT NOT NULL,
+  target_lang TEXT NOT NULL,
+  level TEXT NOT NULL,
+  translated_md TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (source_hash, target_role, target_lang, level)
+);
+
 -- 잠금 불변식 2중 방어 (계획 §핵심 불변식): 잠긴 블록은 UPDATE/DELETE 모두 영구 불가.
 -- 번역본은 별도 테이블(translations)이므로 이 트리거는 번역 기록을 막지 않는다.
 CREATE TRIGGER IF NOT EXISTS blocks_locked_immutable_update

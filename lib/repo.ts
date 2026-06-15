@@ -12,6 +12,7 @@
  * 5. 댓글은 locked 블록 전용.
  */
 
+import { createHash } from "node:crypto";
 import { sqlite } from "./db";
 import { toCoreRole } from "./schema";
 import type { SectionKey } from "./sections";
@@ -652,6 +653,76 @@ export function recordTranslation(
         )
         .run(blockId, targetRole, targetLang);
   return updated.changes > 0;
+}
+
+// ---------------------------------------------------------------------------
+// 번역 캐시 (translation_cache) — 메시지 내용 해시 × 직군 × 언어 × 숙련도.
+// 같은 문장 반복 시 AI 재호출 없이 재사용 (토큰·지연 절약). 의미가 보존되는
+// '정확 일치(정규화)' 캐시 — 비슷하지만 다른 문장에 잘못 물리지 않는다.
+// ---------------------------------------------------------------------------
+
+/** 캐시 키 정규화: 앞뒤 공백 제거 + 연속 공백/개행을 단일 공백으로 축약 후 해시 */
+function translationContentHash(sourceMd: string): string {
+  const normalized = sourceMd.replace(/\s+/g, " ").trim();
+  return createHash("sha256").update(normalized).digest("hex");
+}
+
+/** 캐시 조회 — 동일 (정규화 내용, 직군, 언어, 수준) 번역이 있으면 반환 */
+export function getCachedTranslation(
+  sourceMd: string,
+  targetRole: ProjectRole,
+  targetLang: Lang,
+  level: ExpertiseLevel
+): string | null {
+  const row = sqlite
+    .prepare(
+      `SELECT translated_md AS md FROM translation_cache
+       WHERE source_hash = ? AND target_role = ? AND target_lang = ? AND level = ?`
+    )
+    .get(translationContentHash(sourceMd), targetRole, targetLang, level) as
+    | { md: string }
+    | undefined;
+  return row?.md ?? null;
+}
+
+/** 캐시 저장 (멱등 — 이미 있으면 무시) */
+export function putCachedTranslation(
+  sourceMd: string,
+  targetRole: ProjectRole,
+  targetLang: Lang,
+  level: ExpertiseLevel,
+  translatedMd: string
+): void {
+  sqlite
+    .prepare(
+      `INSERT INTO translation_cache (source_hash, target_role, target_lang, level, translated_md, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(source_hash, target_role, target_lang, level) DO NOTHING`
+    )
+    .run(
+      translationContentHash(sourceMd),
+      targetRole,
+      targetLang,
+      level,
+      translatedMd,
+      now()
+    );
+}
+
+/** 최근 메시지(잠긴 블록) — 추천 메시지 생성의 대화 맥락용. 시간순(오래된→최신). */
+export type RecentMessage = { authorRole: ProjectRole; sourceMd: string };
+export function getRecentMessages(
+  docId: number,
+  limit: number = 12
+): RecentMessage[] {
+  const rows = sqlite
+    .prepare(
+      `SELECT COALESCE(author_project_role, author_role) AS authorRole, source_md AS sourceMd
+       FROM blocks WHERE doc_id = ? AND status = 'locked'
+       ORDER BY locked_at DESC, seq DESC LIMIT ?`
+    )
+    .all(docId, limit) as RecentMessage[];
+  return rows.reverse();
 }
 
 /**

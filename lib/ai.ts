@@ -579,6 +579,58 @@ export async function suggest(draftMd: string): Promise<SuggestResult> {
 }
 
 // ---------------------------------------------------------------------------
+// suggestReplies — 대화 맥락 → 내가 다음에 보낼 만한 메시지 후보(객관식)
+// ---------------------------------------------------------------------------
+
+const REPLY_TOOL_NAME = "propose_replies";
+const REPLY_ROLE_LABEL: Record<ProjectRole, string> = {
+  planner: "기획자",
+  developer: "개발자",
+  designer: "디자이너",
+  ops: "운영자",
+};
+
+/** 채팅 입력 보조 — 내 직군 입장에서 보낼 만한 짧은 메시지 후보를 제안 */
+export async function suggestReplies(
+  conversation: { authorRole: ProjectRole; sourceMd: string }[],
+  myRole: ProjectRole,
+  lang: Lang = "ko"
+): Promise<SuggestResult> {
+  try {
+    const transcript = conversation.length
+      ? conversation
+          .map((m) => `${REPLY_ROLE_LABEL[m.authorRole]}: ${m.sourceMd}`)
+          .join("\n")
+      : "(아직 대화가 없음 — 논의를 여는 첫 메시지를 제안하라)";
+
+    const system = `너는 채팅 참여자를 돕는 보조다. 지금까지의 대화를 보고, 내가(${REPLY_ROLE_LABEL[myRole]}) 다음에 보낼 만한 메시지 후보를 2~4개 제안해 구조화된 형식으로만 응답한다.
+
+[규칙]
+- 각 후보는 바로 보낼 수 있는, 1~2문장의 짧은 ${LANG_NAME[lang]} 메시지다. 길게 늘어놓지 않는다.
+- 서로 다른 방향을 담는다 (예: 핵심을 묻는 질문 / 다음 단계 제안 / 동의·확인 / 빠진 점 보완). 같은 말의 변주는 금지.
+- 내 직군(${REPLY_ROLE_LABEL[myRole]}) 입장에서 자연스러운 말투로 쓴다.
+- 대화에 없는 사실·수치·결정을 지어내지 않는다. 불확실하면 단정 대신 질문 형태로.
+- 출력은 구조화 형식(options 배열)만. 인사말·메타 설명 금지.`;
+
+    const result = await chatStructured({
+      system,
+      user: `다음은 지금까지의 대화(시간순)다. 내가(${REPLY_ROLE_LABEL[myRole]}) 다음에 보낼 메시지 후보를 제안하라:\n\n${transcript}`,
+      maxTokens: 2000,
+      op: `suggestReplies(${myRole},${lang})`,
+      toolName: REPLY_TOOL_NAME,
+      toolDescription:
+        "지금 대화에서 내가 다음에 보낼 만한 짧은 채팅 메시지 후보 2~4개를 제출한다.",
+      jsonSchema: SUGGEST_JSON_SCHEMA,
+      zodSchema: suggestSchema,
+    });
+    if (!result.ok) return result;
+    return { ok: true, options: result.data.options.slice(0, 4) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // abstract — 전체 잠금 히스토리 → Abstract + TOC (구조화 출력 + zod 검증)
 // ---------------------------------------------------------------------------
 

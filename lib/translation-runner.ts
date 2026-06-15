@@ -17,7 +17,26 @@ export async function runBlockJob(
       projectId != null
         ? repo.getLevelForProjectRole(projectId, job.targetRole)
         : repo.getLevelForRole(job.targetRole as Role);
+
+    // 내용 캐시 — 같은 (정규화 메시지, 직군, 언어, 수준) 번역이 있으면 AI 생략
+    const cached = repo.getCachedTranslation(
+      job.sourceMd,
+      job.targetRole,
+      job.targetLang,
+      level
+    );
+    if (cached !== null) {
+      repo.recordTranslation(job.blockId, job.targetRole, job.targetLang, {
+        ok: true,
+        md: cached,
+      });
+      return;
+    }
+
     const r = await translate(job.sourceMd, job.targetRole, level, job.targetLang);
+    if (r.ok) {
+      repo.putCachedTranslation(job.sourceMd, job.targetRole, job.targetLang, level, r.md);
+    }
     repo.recordTranslation(
       job.blockId,
       job.targetRole,

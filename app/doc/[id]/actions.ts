@@ -7,7 +7,7 @@ import { getSession } from "@/lib/session";
 import * as repo from "@/lib/repo";
 import type { Lang, ProjectRole, Role } from "@/lib/repo";
 import { isSectionKey, sectionLabel, type SectionKey } from "@/lib/sections";
-import { suggest, distillSection as distillSectionAI } from "@/lib/ai";
+import { suggest, suggestReplies, distillSection as distillSectionAI } from "@/lib/ai";
 import type { SuggestResult } from "@/lib/ai";
 import {
   runBlockJob as runTranslation,
@@ -122,6 +122,21 @@ export async function requestSuggestions(
   }
   // suggest는 throw하지 않는 규약 — {ok:false} 그대로 클라이언트에 전달
   return suggest(draftMd);
+}
+
+/**
+ * 채팅 추천 메시지(객관식) — 지금까지의 대화 + 내 직군 기준으로 보낼 만한
+ * 메시지 후보 2~4개를 생성한다. 클라이언트가 골라 입력창에 넣고 보낸다.
+ */
+export async function requestReplySuggestions(
+  docId: number
+): Promise<SuggestResult> {
+  const session = await requireSession();
+  const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
+  const lang = repo.getUserLang(session.uid);
+  const convo = repo.getRecentMessages(docId, 12);
+  // suggestReplies는 throw하지 않는 규약
+  return suggestReplies(convo, role, lang);
 }
 
 /**
