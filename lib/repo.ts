@@ -1465,6 +1465,20 @@ export function listAttachmentsForMessage(messageId: number): AttachmentInfo[] {
     .all(messageId) as AttachmentInfo[];
 }
 
+/** 단건 조회 — 파일 서빙 라우트용 (path·mime·소속 doc 확인) */
+export function getAttachment(
+  id: number
+): (AttachmentInfo & { docId: number }) | null {
+  const row = sqlite
+    .prepare(
+      `SELECT id, doc_id AS docId, message_id AS messageId, kind, url, path, mime, title,
+              text_excerpt AS textExcerpt, created_at AS createdAt
+       FROM attachments WHERE id = ?`
+    )
+    .get(id) as (AttachmentInfo & { docId: number }) | undefined;
+  return row ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // v0.2 메시지 관련도·분류 (message_relevance) — AI 판정 + 사람 교정.
 // ---------------------------------------------------------------------------

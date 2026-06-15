@@ -35,6 +35,9 @@ yarn-error.log*
 !.env.local.example
 .env.local
 
+# uploaded attachments (디스크 저장 — 커밋하지 않는다)
+/uploads
+
 # sqlite database (백업 파일 포함 — DB는 어떤 형태로도 커밋하지 않는다)
 *.db
 *.db-journal

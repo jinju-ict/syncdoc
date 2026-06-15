@@ -11,7 +11,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Lang, ProjectRole, TimelineBlock } from "@/lib/repo";
+import type { AttachmentInfo, Lang, ProjectRole, TimelineBlock } from "@/lib/repo";
 import { retryTranslation } from "@/app/doc/[id]/actions";
 import { roleLabelL } from "@/lib/i18n";
 import Markdown from "./Markdown";
@@ -37,6 +37,7 @@ function timeOf(ts: string): string {
 
 export default function ChatMessage({
   block,
+  attachments = [],
   viewerId,
   viewerRole,
   viewerLang = "ko",
@@ -45,6 +46,7 @@ export default function ChatMessage({
   readOnly = false,
 }: {
   block: TimelineBlock;
+  attachments?: AttachmentInfo[];
   viewerId: number;
   viewerRole: ProjectRole;
   viewerLang?: Lang;
@@ -125,6 +127,38 @@ export default function ChatMessage({
         >
           {body}
         </div>
+
+        {/* 첨부 — 이미지는 미리보기, 그 외(PDF·파일)는 카드 + 다운로드 */}
+        {attachments.length > 0 && (
+          <div className={`mt-1.5 flex flex-col gap-1.5 ${own ? "items-end" : "items-start"}`}>
+            {attachments.map((a) =>
+              (a.mime ?? "").startsWith("image/") ? (
+                <a key={a.id} href={`/doc/${docId}/file/${a.id}`} target="_blank" rel="noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/doc/${docId}/file/${a.id}`}
+                    alt={a.title ?? "image"}
+                    className="max-h-60 max-w-full rounded-xl border border-[#E9E6DE]"
+                  />
+                </a>
+              ) : (
+                <a
+                  key={a.id}
+                  href={`/doc/${docId}/file/${a.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex max-w-[16rem] items-center gap-2 rounded-xl border border-[#E0DCD2] bg-white px-3 py-2 text-[13px] text-[#34322C] hover:border-[#9DB0E8]"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6E6A60" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
+                  </svg>
+                  <span className="truncate">{a.title ?? "file"}</span>
+                </a>
+              )
+            )}
+          </div>
+        )}
+
         {canAdapt && (
           <button
             type="button"

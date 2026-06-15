@@ -9,6 +9,7 @@ import type { Lang, ProjectRole, Role } from "@/lib/repo";
 import { isSectionKey, sectionLabel, type SectionKey } from "@/lib/sections";
 import { suggest, suggestReplies, distillSection as distillSectionAI } from "@/lib/ai";
 import type { SuggestResult } from "@/lib/ai";
+import { saveUploadedFile, isTextMime, MAX_UPLOAD_BYTES } from "@/lib/uploads";
 import {
   runBlockJob as runTranslation,
   runSectionI18nJob as runSectionI18n,
@@ -97,6 +98,58 @@ export async function sendBlock(
   revalidatePath(`/doc/${docId}`);
   dispatchTranslations(sent); // 직군별 번역 enqueue + 비동기 생성
   return { ok: true };
+}
+
+/**
+ * 파일 첨부 — 업로드한 파일을 디스크에 저장하고, 그 파일을 단 채팅 메시지(블록)를 보낸다.
+ * 텍스트 기반 파일(.txt/.md/json 등)은 본문을 메시지에 포함해 AI가 백서 근거로 읽는다.
+ * 이미지·PDF는 주고받기·미리보기만 — 내용 추출은 후속 단계.
+ */
+export async function uploadAttachment(
+  docId: number,
+  formData: FormData
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireSession();
+  const file = formData.get("file");
+  const caption = ((formData.get("caption") as string | null) ?? "").trim();
+  if (!(file instanceof File) || file.size === 0)
+    return { ok: false, error: "파일이 없습니다." };
+  if (file.size > MAX_UPLOAD_BYTES)
+    return { ok: false, error: "파일이 너무 큽니다 (최대 10MB)." };
+
+  try {
+    const buf = Buffer.from(await file.arrayBuffer());
+    const { path: savedPath } = await saveUploadedFile(buf, file.name);
+    const mime = file.type || "application/octet-stream";
+    const isText = isTextMime(mime, file.name);
+    const textExcerpt = isText ? buf.toString("utf8").slice(0, 8000) : null;
+
+    // 메시지 본문: 캡션 + 파일 표식 (+ 텍스트 파일이면 본문도 AI가 읽도록 포함)
+    const lines: string[] = [];
+    if (caption) lines.push(caption);
+    lines.push(`📎 ${file.name}`);
+    if (isText && textExcerpt) lines.push("\n```\n" + textExcerpt + "\n```");
+    const md = lines.join("\n");
+
+    const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
+    const blockId = repo.saveDraft(docId, { id: session.uid, role }, md, null);
+    const sent = repo.sendBlock(blockId, session.uid);
+    repo.addAttachment({
+      docId,
+      messageId: sent.blockId,
+      kind: "file",
+      path: savedPath,
+      mime,
+      title: file.name,
+      textExcerpt,
+      uploadedBy: session.uid,
+    });
+    revalidatePath(`/doc/${docId}`);
+    dispatchTranslations(sent);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /**

@@ -83,6 +83,7 @@ export default async function DocPage({
     ctx?.kind === "meeting" ? "회의록" : ctx?.kind === "release" ? "릴리스" : null;
   const viewerLang = repo.getUserLang(session.uid);
   const blocks = repo.getTimeline(docId, viewerProjectRole, viewerLang);
+  const attachments = repo.listAttachments(docId); // 채팅 첨부(파일/이미지)
   const abstract = repo.getLatestAbstract(docId);
   const signatures = repo.listSignatures(docId); // 멤버별 합의 서명
   const myLevel = repo.getUserLevel(session.uid);
@@ -143,6 +144,7 @@ export default async function DocPage({
         <ChatRoom
           blocks={blocks}
           members={members}
+          attachments={attachments}
           viewerId={session.uid}
           viewerRole={viewerProjectRole}
           viewerLang={viewerLang}

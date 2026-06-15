@@ -12,7 +12,7 @@
 import { useState, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Lang } from "@/lib/repo";
-import { sendBlock, requestReplySuggestions } from "@/app/doc/[id]/actions";
+import { sendBlock, requestReplySuggestions, uploadAttachment } from "@/app/doc/[id]/actions";
 
 const L = {
   placeholder: {
@@ -24,6 +24,7 @@ const L = {
   sending: { ko: "전송 중…", en: "Sending…", ja: "送信中…" },
   recommend: { ko: "추천 메시지", en: "Suggest", ja: "おすすめ" },
   recommending: { ko: "생성 중…", en: "Thinking…", ja: "生成中…" },
+  attach: { ko: "파일 첨부", en: "Attach file", ja: "ファイル添付" },
   pickHint: {
     ko: "고르면 입력창에 채워집니다 — 수정 후 보내세요",
     en: "Pick one to fill the box — edit, then send",
@@ -44,9 +45,36 @@ export default function ChatComposer({
   const [isPending, startTransition] = useTransition();
   const [suggestions, setSuggestions] = useState<string[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const router = useRouter();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const tx = (k: keyof typeof L) => L[k][lang] ?? L[k].ko;
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // 같은 파일 재선택 허용
+    if (!f) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.set("file", f);
+      if (md.trim()) fd.set("caption", md.trim());
+      const r = await uploadAttachment(docId, fd);
+      if (r.ok) {
+        setMd("");
+        setSuggestions(null);
+        router.refresh();
+      } else {
+        setError(r.error);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const send = () => {
     const text = md.trim();
@@ -126,6 +154,21 @@ export default function ChatComposer({
       )}
 
       <div className="flex items-end gap-2 rounded-2xl border border-[#E0DCD2] bg-white p-2 focus-within:border-[#9DB0E8]">
+        <input ref={fileRef} type="file" onChange={onFile} className="hidden" />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading || isPending}
+          title={tx("attach")}
+          aria-label={tx("attach")}
+          className="flex-shrink-0 self-stretch rounded-xl border border-[#E0DCD2] bg-white px-2.5 text-[#6E6A60] hover:bg-[#F4F2EC] disabled:opacity-50"
+        >
+          {uploading ? "…" : (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          )}
+        </button>
         <button
           type="button"
           onClick={recommend}

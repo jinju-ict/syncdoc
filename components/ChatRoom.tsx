@@ -6,7 +6,7 @@
  * 대화 = 입력, 백서 = 출력 — 어느 절에 기여하는지는 뒤에서 AI가 분류한다.
  */
 
-import type { Lang, MemberInfo, ProjectRole, TimelineBlock } from "@/lib/repo";
+import type { AttachmentInfo, Lang, MemberInfo, ProjectRole, TimelineBlock } from "@/lib/repo";
 import { roleLabelL } from "@/lib/i18n";
 import ChatMessage from "./ChatMessage";
 import ChatComposer from "./ChatComposer";
@@ -31,6 +31,7 @@ function dayOf(ts: string): string {
 export default function ChatRoom({
   blocks,
   members,
+  attachments = [],
   viewerId,
   viewerRole,
   viewerLang = "ko",
@@ -39,6 +40,7 @@ export default function ChatRoom({
 }: {
   blocks: TimelineBlock[];
   members: MemberInfo[];
+  attachments?: AttachmentInfo[];
   viewerId: number;
   viewerRole: ProjectRole;
   viewerLang?: Lang;
@@ -47,6 +49,14 @@ export default function ChatRoom({
 }) {
   const tx = (k: keyof typeof L) => L[k][viewerLang] ?? L[k].ko;
   const nameById = new Map(members.map((m) => [m.userId, m.name]));
+  const attByMsg = new Map<number, AttachmentInfo[]>();
+  for (const a of attachments) {
+    const mid = a.messageId;
+    if (mid == null) continue;
+    const list = attByMsg.get(mid);
+    if (list) list.push(a);
+    else attByMsg.set(mid, [a]);
+  }
   const nameOf = (b: TimelineBlock) =>
     nameById.get(b.authorId) ?? roleLabelL(b.authorRole, viewerLang);
 
@@ -75,6 +85,7 @@ export default function ChatRoom({
                 )}
                 <ChatMessage
                   block={b}
+                  attachments={attByMsg.get(b.id) ?? []}
                   viewerId={viewerId}
                   viewerRole={viewerRole}
                   viewerLang={viewerLang}
