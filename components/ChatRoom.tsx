@@ -6,7 +6,7 @@
  * 대화 = 입력, 백서 = 출력 — 어느 절에 기여하는지는 뒤에서 AI가 분류한다.
  */
 
-import type { Lang, MemberInfo, MessageRelevanceView, ProjectRole, TimelineBlock } from "@/lib/repo";
+import type { Lang, MemberInfo, ProjectRole, TimelineBlock } from "@/lib/repo";
 import { roleLabelL } from "@/lib/i18n";
 import ChatMessage from "./ChatMessage";
 import ChatComposer from "./ChatComposer";
@@ -31,8 +31,6 @@ function dayOf(ts: string): string {
 export default function ChatRoom({
   blocks,
   members,
-  relevances = [],
-  canCurate = false,
   viewerId,
   viewerRole,
   viewerLang = "ko",
@@ -41,8 +39,6 @@ export default function ChatRoom({
 }: {
   blocks: TimelineBlock[];
   members: MemberInfo[];
-  relevances?: MessageRelevanceView[];
-  canCurate?: boolean;
   viewerId: number;
   viewerRole: ProjectRole;
   viewerLang?: Lang;
@@ -51,7 +47,6 @@ export default function ChatRoom({
 }) {
   const tx = (k: keyof typeof L) => L[k][viewerLang] ?? L[k].ko;
   const nameById = new Map(members.map((m) => [m.userId, m.name]));
-  const relById = new Map(relevances.map((r) => [r.messageId, r]));
   const nameOf = (b: TimelineBlock) =>
     nameById.get(b.authorId) ?? roleLabelL(b.authorRole, viewerLang);
 
@@ -80,8 +75,6 @@ export default function ChatRoom({
                 )}
                 <ChatMessage
                   block={b}
-                  relevance={relById.get(b.id) ?? null}
-                  canCurate={canCurate && !readOnly}
                   viewerId={viewerId}
                   viewerRole={viewerRole}
                   viewerLang={viewerLang}

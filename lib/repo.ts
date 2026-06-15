@@ -15,6 +15,7 @@
 import { createHash } from "node:crypto";
 import { sqlite } from "./db";
 import { toCoreRole } from "./schema";
+import { CONTENT_SECTIONS, sectionLabel } from "./sections";
 import type { SectionKey } from "./sections";
 import type {
   AttachmentKind,
@@ -1954,6 +1955,79 @@ export function sectionSourceSig(docId: number, sectionKey: SectionKey): string 
     )
     .get(docId, sectionKey) as { c: number; maxId: number };
   return `${r.c}:${r.maxId}`;
+}
+
+// ---------------------------------------------------------------------------
+// v0.2 자동 증류 — 입력을 blocks.section_key가 아니라 메시지 분류(message_relevance)에서
+// 가져온다. AI가 분류한(효과적 절 = override ?? ai) 메시지 중 제외되지 않은 것을 모은다.
+// ---------------------------------------------------------------------------
+
+/** 분류 결과로 이 절에 속하는 메시지(제외 제외, 분류 완료) — 자동 증류 입력 */
+export function getClassifiedSectionMessages(
+  docId: number,
+  sectionKey: SectionKey
+): { id: number; sourceMd: string; authorRole: ProjectRole }[] {
+  return sqlite
+    .prepare(
+      `SELECT b.id, b.source_md AS sourceMd,
+              COALESCE(b.author_project_role, b.author_role) AS authorRole
+       FROM blocks b
+       JOIN message_relevance mr ON mr.message_id = b.id
+       WHERE b.doc_id = ? AND b.status = 'locked'
+         AND mr.classified_at IS NOT NULL AND mr.excluded = 0
+         AND COALESCE(mr.override_section_key, mr.ai_section_key) = ?
+       ORDER BY b.locked_at ASC, b.seq ASC`
+    )
+    .all(docId, sectionKey) as {
+    id: number;
+    sourceMd: string;
+    authorRole: ProjectRole;
+  }[];
+}
+
+/** 분류 기반 증류 시그니처 ("개수:최대id"). 분류·제외·재분류가 바뀌면 값이 바뀐다 */
+export function classifiedSectionSig(
+  docId: number,
+  sectionKey: SectionKey
+): string {
+  const r = sqlite
+    .prepare(
+      `SELECT COUNT(*) AS c, COALESCE(MAX(b.id), 0) AS maxId
+       FROM blocks b
+       JOIN message_relevance mr ON mr.message_id = b.id
+       WHERE b.doc_id = ? AND b.status = 'locked'
+         AND mr.classified_at IS NOT NULL AND mr.excluded = 0
+         AND COALESCE(mr.override_section_key, mr.ai_section_key) = ?`
+    )
+    .get(docId, sectionKey) as { c: number; maxId: number };
+  return `${r.c}:${r.maxId}`;
+}
+
+/** 자동 증류 작업 — 내용이 바뀐(시그니처 불일치) 절만. (호출부가 after()로 실행) */
+export type DistillJob = {
+  docId: number;
+  sectionKey: SectionKey;
+  sectionTitle: string;
+  blocks: { sourceMd: string; authorRole: ProjectRole }[];
+  sig: string;
+};
+export function ensureSectionDistills(docId: number): DistillJob[] {
+  const jobs: DistillJob[] = [];
+  for (const s of CONTENT_SECTIONS) {
+    const msgs = getClassifiedSectionMessages(docId, s.key);
+    if (msgs.length === 0) continue; // 아직 이 절에 분류된 대화 없음
+    const sig = classifiedSectionSig(docId, s.key);
+    const existing = getDistilledItem(docId, s.key);
+    if (existing && existing.sourceSig === sig) continue; // 이미 최신
+    jobs.push({
+      docId,
+      sectionKey: s.key,
+      sectionTitle: sectionLabel(s.key),
+      blocks: msgs.map((m) => ({ sourceMd: m.sourceMd, authorRole: m.authorRole })),
+      sig,
+    });
+  }
+  return jobs;
 }
 
 const distilledSubKey = (sectionKey: SectionKey) => `${sectionKey}.distilled`;

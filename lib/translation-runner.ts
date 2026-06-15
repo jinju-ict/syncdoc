@@ -5,7 +5,7 @@
 
 import * as repo from "./repo";
 import type { Role } from "./repo";
-import { translate, translateProse, classifyMessage } from "./ai";
+import { translate, translateProse, classifyMessage, distillSection } from "./ai";
 
 /** 단일 (블록, 직군, 언어) 번역 실행 → 결과 기록 */
 export async function runBlockJob(
@@ -68,6 +68,31 @@ export async function runClassifyJob(job: repo.ClassifyJob): Promise<void> {
       aiRelevance: 0,
       aiReason: "분류 실패",
     });
+  }
+}
+
+/**
+ * 자동 증류 실행 — 분류된 절 메시지 → 백서 절 산문 + 릴리스 스냅샷.
+ * 실패하면 아무 것도 기록하지 않는다(시그니처가 그대로라 다음 기회에 재시도).
+ */
+export async function runDistillJob(job: repo.DistillJob): Promise<void> {
+  try {
+    const r = await distillSection(job.blocks, job.sectionTitle);
+    if (!r.ok) return;
+    repo.upsertDistilledSection(job.docId, job.sectionKey, {
+      title: r.title,
+      bodyMd: r.bodyMd,
+      sig: job.sig,
+    });
+    // 백서가 실질적으로 바뀐 시점(시그니처 변화)마다 릴리스 스냅샷 1건 (시스템 생성)
+    repo.addReleaseEntry(job.docId, {
+      sectionKey: job.sectionKey,
+      title: r.title,
+      bodyMd: r.bodyMd,
+      createdBy: null,
+    });
+  } catch {
+    /* 다음 렌더에서 재시도 */
   }
 }
 

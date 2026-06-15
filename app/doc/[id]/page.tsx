@@ -17,7 +17,7 @@ import Markdown from "@/components/Markdown";
 import { CONTENT_SECTIONS, isSectionKey, sectionTitleL as secTitleL, type SectionKey } from "@/lib/sections";
 import { t } from "@/lib/i18n";
 import { after } from "next/server";
-import { runBlockJob, runSectionI18nJob, runClassifyJob } from "@/lib/translation-runner";
+import { runBlockJob, runSectionI18nJob, runClassifyJob, runDistillJob } from "@/lib/translation-runner";
 
 export const dynamic = "force-dynamic";
 
@@ -100,26 +100,22 @@ export default async function DocPage({
       viewerLang !== "ko" ? repo.ensureSectionTranslations(docId, viewerLang) : [];
     // 메시지 → 절 AI 분류 (미분류 메시지만, 비차단)
     const classifyJobs = repo.ensureMessageClassifications(docId);
-    if (blockJobs.length > 0 || secJobs.length > 0 || classifyJobs.length > 0) {
-      after(() =>
-        Promise.all([
-          ...blockJobs.map((j) => runBlockJob(j, ctx?.projectId ?? null)),
-          ...secJobs.map((j) => runSectionI18nJob(j)),
-          ...classifyJobs.map((j) => runClassifyJob(j)),
-        ])
-      );
-    }
+    // 비서 자동화: 번역·분류를 끝낸 뒤, 내용이 바뀐 절을 자동 증류해 백서를 갱신한다.
+    // (응답 후 실행 — 사용자를 막지 않는다. 시그니처 캐시로 중복 호출은 방지된다)
+    after(async () => {
+      await Promise.all([
+        ...blockJobs.map((j) => runBlockJob(j, ctx?.projectId ?? null)),
+        ...secJobs.map((j) => runSectionI18nJob(j)),
+        ...classifyJobs.map((j) => runClassifyJob(j)),
+      ]);
+      const distillJobs = repo.ensureSectionDistills(docId);
+      for (const j of distillJobs) await runDistillJob(j); // 순차 — 동시 AI 호출 제한
+    });
   }
-  // 메시지별 분류·관련도·교정 상태 (채팅 칩·핀/제외 렌더용)
-  const relevances = repo.getMessageRelevances(docId);
   const myProject = ctx?.projectId
     ? repo.getProjectForUser(ctx.projectId, session.uid)
     : null;
   const members = myProject?.members ?? [];
-  // 분류 교정(핀/제외/재분류) 권한 — 편집자 이상 (레거시·프로젝트 없는 문서는 허용)
-  const canCurate = ctx?.projectId
-    ? myProject?.myPerm === "owner" || myProject?.myPerm === "editor"
-    : true;
 
   const whitepaperMeta = {
     title: doc.title,
@@ -147,8 +143,6 @@ export default async function DocPage({
         <ChatRoom
           blocks={blocks}
           members={members}
-          relevances={relevances}
-          canCurate={canCurate}
           viewerId={session.uid}
           viewerRole={viewerProjectRole}
           viewerLang={viewerLang}
