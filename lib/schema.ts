@@ -144,16 +144,6 @@ export const blocks = sqliteTable("blocks", {
   seq: integer("seq"),
 });
 
-export const suggestions = sqliteTable("suggestions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  blockId: integer("block_id")
-    .notNull()
-    .references(() => blocks.id),
-  optionsJson: text("options_json").notNull(),
-  acceptedOption: integer("accepted_option"),
-  createdAt: text("created_at").notNull(),
-});
-
 export const comments = sqliteTable("comments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   blockId: integer("block_id")

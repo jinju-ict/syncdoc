@@ -146,7 +146,7 @@ export type CommentInfo = {
   createdAt: string;
 };
 
-/** 타임라인의 잠긴 블록 + 번역 + 댓글 (BlockView/CommentSidebar의 단위 데이터) */
+/** 타임라인의 잠긴 블록 + 번역 + 댓글(읽기 전용 레거시 — 내보내기에서만 표시) */
 export type TimelineBlock = {
   id: number;
   docId: number;
@@ -802,34 +802,6 @@ export function ensureBlockTranslations(
     jobs.push({ blockId: b.id, docId, sourceMd: b.sourceMd, targetRole: viewerRole, targetLang: viewerLang });
   }
   return jobs;
-}
-
-// ---------------------------------------------------------------------------
-// 댓글 — locked 블록 전용
-// ---------------------------------------------------------------------------
-
-export function addComment(
-  blockId: number,
-  authorId: number,
-  body: string,
-  parentId: number | null = null
-): number {
-  const block = sqlite
-    .prepare("SELECT status, doc_id AS docId FROM blocks WHERE id = ?")
-    .get(blockId) as { status: string; docId: number } | undefined;
-  if (!block) throw new Error("블록을 찾을 수 없습니다.");
-  if (block.status !== "locked")
-    throw new Error("댓글은 잠긴 블록에만 작성할 수 있습니다.");
-  assertDocActive(block.docId);
-  if (body.trim().length === 0) throw new Error("댓글 내용을 입력하세요.");
-
-  const result = sqlite
-    .prepare(
-      `INSERT INTO comments (block_id, author_id, body, parent_id, created_at)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(blockId, authorId, body, parentId, now());
-  return Number(result.lastInsertRowid);
 }
 
 // ---------------------------------------------------------------------------

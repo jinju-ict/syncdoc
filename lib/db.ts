@@ -81,14 +81,6 @@ CREATE TABLE IF NOT EXISTS block_translations (
   UNIQUE (block_id, target_role, target_lang)
 );
 
-CREATE TABLE IF NOT EXISTS suggestions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  block_id INTEGER NOT NULL REFERENCES blocks(id),
-  options_json TEXT NOT NULL,
-  accepted_option INTEGER,
-  created_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   block_id INTEGER NOT NULL REFERENCES blocks(id),
