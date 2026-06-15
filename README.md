@@ -3,9 +3,9 @@
 **하나의 문서, 모든 직군 — 각자의 언어로.**
 _One document, every role — each in their own language._
 
-서로 다른 직군(기획·개발·디자인·운영)과 서로 다른 언어(한국어·English·日本語)의 사람들이 **하나의 백서(whitepaper)** 를 함께 만드는 협업 툴입니다. 자유로운 대화가 AI를 통해 **각자의 직군 관점 + 모국어**로 번역되어 보이고, 그 대화가 합의를 거쳐 **정규 구조의 백서**로 증류됩니다. 회의록과 릴리스 노트는 그 대화에서 **자동으로 파생**됩니다.
+서로 다른 직군(기획·개발·디자인·운영)과 서로 다른 언어(한국어·English·日本語)의 사람들이 **프로젝트 채팅방**에서 평소처럼 대화하고 파일·이미지·PDF를 주고받으면, **AI가 비서처럼 그 대화를 정리해 하나의 백서(whitepaper)로 자동 완성**하는 협업 툴입니다. 다른 직군의 메시지는 "내 수준으로 보기" 토글로 내 관점·모국어에 맞춰 번역되고, 회의록과 릴리스 노트는 그 대화에서 **자동으로 파생**됩니다.
 
-> 핵심 아이디어: **대화 = 입력, 백서 = 출력.** 사용자는 부담 없이 대화로 던지고, AI가 그것을 표준 문서로 정리합니다. 같은 블록이 보는 사람마다 다르게 렌더링되고(직군×언어), 합의 시점의 결정이 박제됩니다.
+> 핵심 아이디어: **떠드는 건 사람, 정리는 AI.** 대화 = 입력, 백서 = 출력. 사용자는 부담 없이 채팅하고, 뒤에서 AI가 메시지를 절(節)로 분류해 표준 구조의 백서로 증류합니다. 같은 메시지가 보는 사람마다 다르게 번역되고(직군×언어×숙련도), 합의 시점의 결정이 릴리스로 박제됩니다.
 
 ---
 
@@ -49,7 +49,7 @@ npm run dev
 #   → http://localhost:3000  (DB는 첫 실행 시 자동 생성·시드됩니다)
 ```
 
-> **AI 키 없이도 실행됩니다.** 키를 넣지 않으면 번역·증류·요약(Abstract) 기능만 "실패"로 표시되고 재시도 버튼이 뜹니다 — 회원가입·프로젝트·문서·대화·합의 등 나머지는 모두 동작하고 문서 히스토리는 안전합니다.
+> **AI 키 없이도 실행됩니다.** 키를 넣지 않으면 번역·분류·증류·요약(Abstract) 등 AI 기능만 조용히 건너뛰고 — 회원가입·프로젝트·채팅·파일 첨부·합의 등 나머지는 모두 동작하고 대화 히스토리는 안전합니다. (백서는 AI가 있어야 채워집니다)
 
 ### 프로덕션 빌드
 ```bash
@@ -105,26 +105,23 @@ OLLAMA_MODEL=qwen3:8b
 > 기존 username 로그인도 가능: `planner` / `developer` (비번 `demo1234`).
 
 **둘러보기**
-1. `mina@team.co` / `demo1234` 로 로그인 → **내 프로젝트**.
-2. "팝업스토어 오픈 프로젝트" → **문서 열기** → 워크스페이스에서 팀원·초대 관리, 그리고 **백서** 열기.
-3. 문서 상단 **언어·수준 컨트롤**에서 `English`/`日本語`로 바꾸면 백서·대화가 그 언어로 번역됩니다.
-4. **나란히** 렌즈에서 한 절의 대화를 보내고 → **"백서에 반영(증류)"** → 백서가 한 단락 자라납니다.
-5. 참여자(소유자·편집자) 전원이 **동의(서명)** 하면 합의되어 상단 **Abstract 표지**가 생성됩니다.
-6. **데이터** 렌즈에서 문서가 어떻게 검색 가능한 구조 데이터(RAG)가 되는지, **기록** 카드에서 자동 생성된 회의록·릴리스를 확인하세요.
+1. `mina@team.co` / `demo1234` 로 로그인 → **내 프로젝트**(세로 리스트).
+2. 프로젝트를 누르면 바로 **채팅방(대화 렌즈)** 으로 들어갑니다. 메시지를 보내거나 📎로 파일을 올려보세요. (✨ 버튼으로 추천 메시지도)
+3. 남의 메시지 아래 **"내 수준으로 보기"** 토글 → 내 직군·언어에 맞춘 번역으로 바뀝니다. 우상단 **언어·수준 컨트롤**로 EN/日 전환.
+4. 잠시 후 상단 탭에서 **백서** 렌즈로 가보면, 대화가 절별로 자동 정리돼 채워집니다 — 누르는 버튼 없이 AI가 알아서.
+5. 참여자(소유자·편집자) 전원이 백서 렌즈에서 **동의(서명)** 하면 합의되어 상단 **Abstract 표지**가 생성됩니다.
+6. 프로젝트 워크스페이스(채팅 헤더의 프로젝트 링크)의 **기록** 카드에서 자동 생성된 회의록·릴리스를 확인하세요.
 
 ---
 
 ## 주요 기능
 
-- **온보딩 & 프로젝트** — 이메일 회원가입/로그인(다중 계정, 같은 직군 여러 명 협업), 프로젝트 생성, 팀원 초대(직군+권한), 받은 초대 수락/거절, 링크 공유.
-- **멤버·초대 관리** — 소유자가 직군·권한 변경/제거(마지막 소유자 보호), 초대 보내기·대기 초대 취소.
-- **문서 4-렌즈** — **백서**(목차 있는 산문 문서) · **나란히**(절 본문 + 그 절 대화) · **대화**(타임라인+작성기+댓글) · **데이터**(RAG 청크·메타데이터 질의·스키마).
-- **정규 백서 스키마** — 모든 문서가 고정 5절 골격(0 문서정보 · 1 목적과 지향점 · 2 결과물과 세부 과업 · 3 수행 방식과 제약 · 4 운영 규칙 및 리스크). 절 안 항목은 증류로 자동 생성.
-- **직군 × 자연어 번역** — 같은 블록이 보는 사람의 (직군 관점 × 한/EN/日)으로 렌더링. 언어 전환·문서 진입 시 누락 번역 자동 생성·캐시.
-- **증류(대화 → 백서)** — 합의된 대화를 AI가 산문으로 1회 증류·캐시(같은 대화면 재호출 없음).
-- **합의(서명)** — 참여자 전원 서명 시 합의 → Abstract/TOC 표지 자동 생성. 누가 동의했는지 박제.
-- **자동 파생 기록** — 회의록(대화 날짜별)·릴리스(합의 시 append-only 스냅샷)를 뷰 + `.md`로.
-- **숙련도 레벨** — 입문/중급/전문가에 맞춰 번역 표현이 조정.
+- **온보딩 & 프로젝트** — 이메일 회원가입/로그인(다중 계정, 같은 직군 여러 명 협업), 프로젝트 생성(=채팅방 1개), 팀원 초대(직군+권한), 받은 초대 수락/거절, 링크 공유, **입장 승인**(비멤버 입장 요청 → 소유자 승인).
+- **프로젝트 채팅방 (대화 렌즈)** — 통합 타임라인의 메신저형 UI. 메시지(Enter 전송) + **파일·이미지·PDF 첨부**(📎, 이미지 미리보기·다운로드) + **객관식 추천 메시지**(✨).
+- **문장 단위 번역** — 다른 사람 메시지를 "내 수준으로 보기" 토글 시 내 (직군×언어×숙련도)에 맞춰 충실 번역(백서식으로 부풀리지 않음). **내용 해시 캐시**로 같은 문장 반복 시 AI 생략.
+- **AI 자동 분류·증류 (백서 렌즈)** — 메시지를 5절(0 문서정보·1 목적과 지향점·2 결과물과 세부 과업·3 수행 방식과 제약·4 운영 규칙 및 리스크) 중 하나로 자동 분류 → 내용이 바뀐 절을 **자동 증류해 백서를 갱신**(수동 버튼 없음, 시그니처 캐시로 중복 방지).
+- **합의(서명)** — 참여자 전원 서명 시 합의 → Abstract/TOC 표지 자동 생성. 누가 동의했는지 박제. 새 메시지를 보내면 합의·서명 초기화.
+- **자동 파생 기록** — 회의록(대화 날짜별)·릴리스(증류 시 append-only 스냅샷)를 뷰 + `.md`로.
 - **다국어 UI · 반응형** — 문서·관리 화면 한/EN/日, 모바일에서 단일 컬럼으로 스택.
 
 ---
@@ -137,7 +134,8 @@ OLLAMA_MODEL=qwen3:8b
 | `/project/[id]` | 워크스페이스 — 백서·멤버·초대·기록 |
 | `/project/[id]/record` | 회의록·릴리스 뷰 |
 | `/project/[id]/record/export` | 회의록·릴리스 `.md` 내보내기 |
-| `/doc/[id]` | 백서 문서 (`?lens=paper\|side\|conv\|data`, `&sec=`) |
+| `/doc/[id]` | 문서 — 기본 **백서**, `?lens=conv` 는 **채팅(대화)** |
+| `/doc/[id]/file/[aid]` | 채팅 첨부 파일 서빙 (세션·소속 doc 가드) |
 | `/doc/[id]/export` | 문서 전체 `.md` 내보내기 |
 | `/login` | 시드 계정 로그인 (`/`는 `/start`로 리다이렉트) |
 
@@ -147,12 +145,13 @@ OLLAMA_MODEL=qwen3:8b
 
 - **`lib/repo.ts`** — 유일한 데이터 접근 경로. 모든 불변식이 여기서 강제됩니다.
 - **`lib/db.ts`** — better-sqlite3 연결 + 멱등 DDL/마이그레이션 + 데모 시드.
-- **`lib/ai.ts`** — `translate` / `translateProse` / `suggest` / `abstract` / `distillSection`. 프로바이더 추상화, 항상 `{ ok, ... }` 반환(throw 안 함).
-- **`lib/translation-runner.ts`** — 번역 생성 러너(서버 액션·문서 페이지 공유).
+- **`lib/ai.ts`** — `translate`(문장 통역) / `translateProse` / `classifyMessage` / `suggestReplies` / `abstract` / `distillSection`. 프로바이더 추상화, 항상 `{ ok, ... }` 반환(throw 안 함).
+- **`lib/translation-runner.ts`** — 번역·분류·증류 러너(서버 액션·문서 페이지 공유). 렌더 후 `after()`에서 비차단 실행.
+- **`lib/uploads.ts`** — 첨부 파일 디스크 저장(`uploads/`, 10MB 제한).
 - **`lib/sections.ts` · `lib/i18n.ts`** — 정규 5절 상수 / UI 다국어 사전.
 
 **핵심 테이블**
-`users`(email·name·lang·level) · `projects` · `project_members`(role 4 × perm 4) · `invites` · `documents`(project_id·kind) · `blocks`(author_project_role·section_key) · **`block_translations`**(블록 × 직군 × 언어) · `section_content`(증류 산문 + 캐시 sig) · **`section_content_i18n`**(절 × 언어) · `signatures` · `release_entries`(append-only) · `abstracts` · `comments` · `suggestions`.
+`users`(email·name·lang·level) · `projects` · `project_members`(role 4 × perm 4) · `invites` · **`join_requests`**(입장 승인) · `documents`(project_id·kind) · `blocks`(=메시지, author_project_role) · **`block_translations`**(블록 × 직군 × 언어) · **`translation_cache`**(내용해시 × 직군 × 언어 × 수준) · **`message_relevance`**(메시지 → 절 분류·관련도) · **`attachments`**(파일/링크) · `section_content`(증류 산문 + 캐시 sig) · `section_content_i18n`(절 × 언어) · `signatures` · `release_entries`(append-only) · `abstracts`.
 
 **직군 모델** — 직군은 사용자 전역 속성이 아니라 **프로젝트 멤버십**(`project_members.role`). 같은 직군 여러 명이 각자 계정으로 협업합니다. 번역·렌더링은 4직군(기획/개발/디자인/운영) 전부, 정본 원문은 한국어.
 
@@ -188,13 +187,20 @@ syncdoc/
 │  ├─ start/                 # 온보딩·홈 (page + actions)
 │  ├─ project/[id]/          # 워크스페이스 (page + actions)
 │  │  └─ record/             # 회의록·릴리스 뷰 + export
-│  ├─ doc/[id]/              # 백서 문서 (page + actions + approval-actions + export)
+│  ├─ doc/[id]/              # 문서 (page + actions + approval-actions + export)
+│  │  └─ file/[aid]/         # 첨부 파일 서빙 라우트
 │  ├─ login/                 # 로그인
 │  └─ page.tsx               # / → /start 리다이렉트
-├─ components/               # WhitepaperReader, DocLensShell, DataLens, DistillButton,
-│                            # MemberAdmin, InviteForm, PendingInvites, Timeline, BlockView … (16개)
-├─ lib/                      # repo, db, ai, translation-runner, sections, i18n, session, password, schema
-├─ scripts/verify-immutability.cjs
+├─ components/               # 기능별 폴더
+│  ├─ chat/                  # ChatRoom, ChatMessage, ChatComposer
+│  ├─ whitepaper/            # WhitepaperReader, AbstractHeader
+│  ├─ doc/                   # DocLensShell, ArchiveButton, LevelSelector
+│  ├─ project/               # MemberAdmin, InviteForm, PendingInvites, JoinRequest(s/Form)
+│  ├─ start/                 # StartShell
+│  └─ common/                # Markdown
+├─ lib/                      # repo, db, ai, translation-runner, uploads, sections, i18n, session, password, schema
+├─ scripts/                  # verify-immutability.cjs, verify-archive.cjs
+├─ uploads/                  # (gitignore) 첨부 파일 저장소
 └─ .env.local.example
 ```
 
@@ -206,9 +212,10 @@ Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Tailwind CSS v4 
 ---
 
 ## 로드맵 (후순위)
+- **백서 화면에서 분류 교정** — 틀린 절 분류 바로잡기·항목 제외·백서 직접 수정(현재 분류·정리는 전부 AI 자동, 채팅엔 교정 UI 없음).
+- **이미지·PDF 내용 추출** — 현재는 주고받기·미리보기만, AI는 텍스트 파일·메시지 본문만 읽음. 외부 링크 본문 fetch도 후속.
 - 온보딩 셸(`/start`) UI 라벨 다국어 — 현재 한국어 고정(문서·프로젝트·관리 화면은 한/EN/日 완료).
-- 자동 테스트(번역/증류 골든 케이스, 권한 가드 회귀).
-- 모바일 전용 UX 디테일(바텀시트 등) — 현재는 반응형 스택까지.
+- 자동 테스트(번역/분류/증류 골든 케이스, 권한 가드 회귀).
 
 ---
 
