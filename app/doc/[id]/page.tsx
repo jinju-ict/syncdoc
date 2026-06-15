@@ -17,7 +17,7 @@ import Markdown from "@/components/Markdown";
 import { CONTENT_SECTIONS, isSectionKey, sectionTitleL as secTitleL, type SectionKey } from "@/lib/sections";
 import { t } from "@/lib/i18n";
 import { after } from "next/server";
-import { runBlockJob, runSectionI18nJob } from "@/lib/translation-runner";
+import { runBlockJob, runSectionI18nJob, runClassifyJob } from "@/lib/translation-runner";
 
 export const dynamic = "force-dynamic";
 
@@ -98,19 +98,28 @@ export default async function DocPage({
     const blockJobs = repo.ensureBlockTranslations(docId, viewerProjectRole, viewerLang);
     const secJobs =
       viewerLang !== "ko" ? repo.ensureSectionTranslations(docId, viewerLang) : [];
-    if (blockJobs.length > 0 || secJobs.length > 0) {
+    // 메시지 → 절 AI 분류 (미분류 메시지만, 비차단)
+    const classifyJobs = repo.ensureMessageClassifications(docId);
+    if (blockJobs.length > 0 || secJobs.length > 0 || classifyJobs.length > 0) {
       after(() =>
         Promise.all([
           ...blockJobs.map((j) => runBlockJob(j, ctx?.projectId ?? null)),
           ...secJobs.map((j) => runSectionI18nJob(j)),
+          ...classifyJobs.map((j) => runClassifyJob(j)),
         ])
       );
     }
   }
-  const members =
-    (ctx?.projectId
-      ? repo.getProjectForUser(ctx.projectId, session.uid)?.members
-      : null) ?? [];
+  // 메시지별 분류·관련도·교정 상태 (채팅 칩·핀/제외 렌더용)
+  const relevances = repo.getMessageRelevances(docId);
+  const myProject = ctx?.projectId
+    ? repo.getProjectForUser(ctx.projectId, session.uid)
+    : null;
+  const members = myProject?.members ?? [];
+  // 분류 교정(핀/제외/재분류) 권한 — 편집자 이상 (레거시·프로젝트 없는 문서는 허용)
+  const canCurate = ctx?.projectId
+    ? myProject?.myPerm === "owner" || myProject?.myPerm === "editor"
+    : true;
 
   const whitepaperMeta = {
     title: doc.title,
@@ -138,6 +147,8 @@ export default async function DocPage({
         <ChatRoom
           blocks={blocks}
           members={members}
+          relevances={relevances}
+          canCurate={canCurate}
           viewerId={session.uid}
           viewerRole={viewerProjectRole}
           viewerLang={viewerLang}

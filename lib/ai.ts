@@ -764,6 +764,82 @@ const distillSchema = z.object({
   body_md: z.string().trim().min(1),
 });
 
+// ---------------------------------------------------------------------------
+// classifyMessage — 채팅 메시지 → 기여하는 백서 절 + 관련도 (구조화 출력)
+// ---------------------------------------------------------------------------
+
+export type ClassifyResult =
+  | { ok: true; section: "why" | "what" | "how" | "rules" | "none"; relevance: number; reason: string }
+  | { ok: false; error: string };
+
+const CLASSIFY_TOOL_NAME = "classify_message";
+
+const CLASSIFY_SYSTEM = `너는 채팅 메시지가 백서(PRD)의 어느 절에 기여하는지 판정하는 분류기다.
+메시지 하나를 받아, 아래 다섯 중 하나로 분류하고 백서 관련도(0~1)와 짧은 이유를
+구조화된 형식으로만 제출한다.
+
+[절]
+- why: 목적과 지향점 — 이 프로젝트가 왜 필요한지, 목표·방향·가치·배경.
+- what: 결과물과 세부 과업 — 무엇을 만드는지, 산출물·기능·범위·과업.
+- how: 수행 방식과 제약 — 어떻게 하는지, 방법·절차·일정·기술 선택·제약.
+- rules: 운영 규칙 및 리스크 — 운영 규칙·정책·권한·리스크·예외 처리·합의된 약속.
+- none: 위 어디에도 해당하지 않는 잡담·인사·감탄·단순 일정 조율 등 백서에 담길 실질 내용이 아님.
+
+[관련도 relevance — 0~1]
+- 메시지가 백서에 담길 만한 실질적 결정·요구·제약을 담을수록 1에 가깝게.
+- none이거나 의미가 옅으면 0에 가깝게.
+
+[규칙] 메시지에 실제로 있는 내용만 근거로 판정한다. 없는 내용을 상상하지 말 것.
+이유(reason)는 한 문장으로 짧게.`;
+
+const CLASSIFY_JSON_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    section: { type: "string", enum: ["why", "what", "how", "rules", "none"] },
+    relevance: { type: "number" },
+    reason: { type: "string" },
+  },
+  required: ["section", "relevance", "reason"],
+  additionalProperties: false,
+};
+
+const classifySchema = z.object({
+  section: z.enum(["why", "what", "how", "rules", "none"]),
+  relevance: z.number().min(0).max(1),
+  reason: z.string().trim(),
+});
+
+/** 채팅 메시지를 기여 절 + 관련도로 분류 (선택적 직전 대화 맥락 포함) */
+export async function classifyMessage(
+  sourceMd: string,
+  recentContext?: string
+): Promise<ClassifyResult> {
+  try {
+    const user = recentContext
+      ? `참고용 직전 대화:\n${recentContext}\n\n---\n분류할 메시지:\n${sourceMd}`
+      : `분류할 메시지:\n${sourceMd}`;
+    const result = await chatStructured({
+      system: CLASSIFY_SYSTEM,
+      user,
+      maxTokens: 1000,
+      op: "classifyMessage",
+      toolName: CLASSIFY_TOOL_NAME,
+      toolDescription: "메시지가 기여하는 백서 절과 관련도, 짧은 이유를 제출한다.",
+      jsonSchema: CLASSIFY_JSON_SCHEMA,
+      zodSchema: classifySchema,
+    });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      section: result.data.section,
+      relevance: result.data.relevance,
+      reason: result.data.reason,
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
 /** 한 절의 대화 블록들을 그 절의 백서 산문으로 증류 */
 export async function distillSection(
   blocks: { sourceMd: string; authorRole: ProjectRole }[],

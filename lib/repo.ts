@@ -1567,6 +1567,67 @@ export function getMessageRelevance(
   return { ...row, pinned: row.pinned === 1, excluded: row.excluded === 1 };
 }
 
+/** 분류 작업 — 아직 AI 분류되지 않은 메시지(잠긴 블록) */
+export type ClassifyJob = { messageId: number; sourceMd: string };
+
+/**
+ * 아직 분류되지 않은(classified_at IS NULL) 잠긴 블록 목록.
+ * 렌더 시 호출돼도 안전 — 행이 없거나 미분류인 것만 반환(호출부가 after()로 생성).
+ */
+export function ensureMessageClassifications(docId: number): ClassifyJob[] {
+  return sqlite
+    .prepare(
+      `SELECT b.id AS messageId, b.source_md AS sourceMd
+       FROM blocks b
+       LEFT JOIN message_relevance mr ON mr.message_id = b.id
+       WHERE b.doc_id = ? AND b.status = 'locked'
+         AND (mr.id IS NULL OR mr.classified_at IS NULL)
+       ORDER BY b.locked_at ASC, b.seq ASC`
+    )
+    .all(docId) as ClassifyJob[];
+}
+
+/** 메시지별 분류·관련도·교정 상태 (effective = override ?? ai) — 채팅 렌더용 */
+export type MessageRelevanceView = {
+  messageId: number;
+  sectionKey: string | null; // 사람 교정(override) 우선, 없으면 AI 분류
+  aiSectionKey: string | null;
+  relevance: number | null;
+  pinned: boolean;
+  excluded: boolean;
+  classified: boolean;
+};
+
+export function getMessageRelevances(docId: number): MessageRelevanceView[] {
+  const rows = sqlite
+    .prepare(
+      `SELECT mr.message_id AS messageId, mr.ai_section_key AS aiSectionKey,
+              mr.ai_relevance AS relevance, mr.pinned, mr.excluded,
+              mr.override_section_key AS overrideSectionKey, mr.classified_at AS classifiedAt
+       FROM message_relevance mr
+       JOIN blocks b ON b.id = mr.message_id
+       WHERE b.doc_id = ?`
+    )
+    .all(docId) as {
+    messageId: number;
+    aiSectionKey: string | null;
+    relevance: number | null;
+    pinned: number;
+    excluded: number;
+    overrideSectionKey: string | null;
+    classifiedAt: string | null;
+  }[];
+  return rows.map((r) => ({
+    messageId: r.messageId,
+    sectionKey: r.overrideSectionKey ?? r.aiSectionKey,
+    aiSectionKey: r.aiSectionKey,
+    relevance: r.relevance,
+    pinned: r.pinned === 1,
+    excluded: r.excluded === 1,
+    classified: r.classifiedAt !== null,
+  }));
+}
+
 /**
  * 문서 뷰어의 코어 역할 — 문서가 프로젝트에 속하면 그 사람의 멤버십 직군을
  * 2축(planner/developer)으로 매핑해 반환한다. 멤버십이 없으면 계정 전역 역할로 폴백.

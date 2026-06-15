@@ -5,7 +5,7 @@
 
 import * as repo from "./repo";
 import type { Role } from "./repo";
-import { translate, translateProse } from "./ai";
+import { translate, translateProse, classifyMessage } from "./ai";
 
 /** 단일 (블록, 직군, 언어) 번역 실행 → 결과 기록 */
 export async function runBlockJob(
@@ -47,6 +47,26 @@ export async function runBlockJob(
     repo.recordTranslation(job.blockId, job.targetRole, job.targetLang, {
       ok: false,
       error: String(e),
+    });
+  }
+}
+
+/** 단일 메시지 분류 실행 → message_relevance에 AI 분류 기록 (실패도 표시해 재호출 방지) */
+export async function runClassifyJob(job: repo.ClassifyJob): Promise<void> {
+  try {
+    const r = await classifyMessage(job.sourceMd);
+    repo.upsertMessageRelevanceAI({
+      messageId: job.messageId,
+      aiSectionKey: r.ok ? (r.section === "none" ? null : r.section) : null,
+      aiRelevance: r.ok ? r.relevance : 0,
+      aiReason: r.ok ? r.reason : "분류 실패",
+    });
+  } catch {
+    repo.upsertMessageRelevanceAI({
+      messageId: job.messageId,
+      aiSectionKey: null,
+      aiRelevance: 0,
+      aiReason: "분류 실패",
     });
   }
 }

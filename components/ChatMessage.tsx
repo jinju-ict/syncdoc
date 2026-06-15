@@ -11,10 +11,19 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Lang, ProjectRole, TimelineBlock } from "@/lib/repo";
-import { retryTranslation } from "@/app/doc/[id]/actions";
+import type { Lang, MessageRelevanceView, ProjectRole, TimelineBlock } from "@/lib/repo";
+import { retryTranslation, correctMessageClassification } from "@/app/doc/[id]/actions";
 import { roleLabelL } from "@/lib/i18n";
 import Markdown from "./Markdown";
+
+/** 절 칩 — 분류 결과를 짧게 표시 (정식 절 제목은 sectionTitleL, 여기선 압축) */
+const SECTION_CHIP: Record<string, { ko: string; en: string; ja: string; c: string; bg: string }> = {
+  why: { ko: "목적", en: "Why", ja: "目的", c: "#6D4FC8", bg: "#F1EDFB" },
+  what: { ko: "결과물", en: "What", ja: "成果", c: "#0D7E74", bg: "#E6F4F2" },
+  how: { ko: "방식", en: "How", ja: "方式", c: "#2D6FB0", bg: "#E7F0F8" },
+  rules: { ko: "규칙", en: "Rules", ja: "規則", c: "#C2410C", bg: "#FBEEE4" },
+};
+const SECTION_ORDER = ["why", "what", "how", "rules"] as const;
 
 const ROLE_AV: Record<ProjectRole, { c: string; bg: string; bd: string }> = {
   planner: { c: "#6D4FC8", bg: "#F1EDFB", bd: "#E2DAF6" },
@@ -29,6 +38,13 @@ const L = {
   translating: { ko: "번역 중…", en: "Translating…", ja: "翻訳中…" },
   retrying: { ko: "재시도 중…", en: "Retrying…", ja: "再試行中…" },
   failedRetry: { ko: "번역 실패 · 재시도", en: "Translation failed · retry", ja: "翻訳失敗 · 再試行" },
+  classifying: { ko: "분류 중…", en: "Classifying…", ja: "分類中…" },
+  chat: { ko: "잡담", en: "Chat", ja: "雑談" },
+  auto: { ko: "자동", en: "Auto", ja: "自動" },
+  pin: { ko: "백서 반영", en: "Pin to doc", ja: "白書に反映" },
+  pinned: { ko: "반영됨", en: "Pinned", ja: "反映済" },
+  exclude: { ko: "제외", en: "Exclude", ja: "除外" },
+  excluded: { ko: "제외됨", en: "Excluded", ja: "除外済" },
 } as const;
 
 function timeOf(ts: string): string {
@@ -37,6 +53,8 @@ function timeOf(ts: string): string {
 
 export default function ChatMessage({
   block,
+  relevance = null,
+  canCurate = false,
   viewerId,
   viewerRole,
   viewerLang = "ko",
@@ -45,6 +63,8 @@ export default function ChatMessage({
   readOnly = false,
 }: {
   block: TimelineBlock;
+  relevance?: MessageRelevanceView | null;
+  canCurate?: boolean;
   viewerId: number;
   viewerRole: ProjectRole;
   viewerLang?: Lang;
@@ -54,8 +74,21 @@ export default function ChatMessage({
 }) {
   const [showAdapted, setShowAdapted] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [curating, startCurate] = useTransition();
   const router = useRouter();
   const tx = (k: keyof typeof L) => L[k][viewerLang] ?? L[k].ko;
+
+  const curate = (change: { pinned?: boolean; excluded?: boolean; section?: string | null }) =>
+    startCurate(async () => {
+      await correctMessageClassification(docId, block.id, change);
+      router.refresh();
+    });
+
+  const excluded = relevance?.excluded ?? false;
+  const pinned = relevance?.pinned ?? false;
+  const sec = relevance?.sectionKey ?? null; // override ?? ai
+  const classified = relevance?.classified ?? false;
+  const chipDef = sec ? SECTION_CHIP[sec] : null;
 
   const own = block.authorId === viewerId;
   const av = ROLE_AV[block.authorRole];
@@ -102,7 +135,7 @@ export default function ChatMessage({
   })();
 
   return (
-    <div className={`flex gap-2.5 ${own ? "flex-row-reverse" : "flex-row"}`}>
+    <div className={`flex gap-2.5 ${own ? "flex-row-reverse" : "flex-row"} ${excluded && canCurate ? "opacity-50" : ""}`}>
       <span
         className="mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-full text-xs font-bold"
         style={{ background: av.bg, color: av.c, border: `1px solid ${av.bd}` }}
@@ -138,6 +171,51 @@ export default function ChatMessage({
             </svg>
             {showAdapted ? tx("original") : tx("myLevel")}
           </button>
+        )}
+
+        {/* 분류·교정 (편집자 이상) — 어느 절로 갈지 + 핀/제외 + 재분류 */}
+        {canCurate && (
+          <div className={`mt-1 flex flex-wrap items-center gap-1 ${own ? "justify-end" : ""}`}>
+            {!classified ? (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10.5px] text-gray-400">{tx("classifying")}</span>
+            ) : chipDef ? (
+              <span className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold" style={{ color: chipDef.c, background: chipDef.bg }}>
+                {chipDef[viewerLang] ?? chipDef.ko}
+              </span>
+            ) : (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10.5px] text-gray-400">{tx("chat")}</span>
+            )}
+            <select
+              value={sec ?? ""}
+              onChange={(e) => curate({ section: e.target.value === "" ? null : e.target.value })}
+              disabled={curating}
+              className="rounded border border-gray-200 bg-white px-1 py-0.5 text-[10.5px] text-gray-500 focus:outline-none"
+              title={tx("auto")}
+            >
+              <option value="">{tx("auto")}</option>
+              {SECTION_ORDER.map((s) => (
+                <option key={s} value={s}>
+                  {SECTION_CHIP[s][viewerLang] ?? SECTION_CHIP[s].ko}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => curate({ pinned: !pinned })}
+              disabled={curating}
+              className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium ${pinned ? "bg-[#EDF1FE] text-[#2D4FD4]" : "text-gray-400 hover:text-gray-700"}`}
+            >
+              📌 {pinned ? tx("pinned") : tx("pin")}
+            </button>
+            <button
+              type="button"
+              onClick={() => curate({ excluded: !excluded })}
+              disabled={curating}
+              className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium ${excluded ? "bg-amber-50 text-amber-700" : "text-gray-400 hover:text-gray-700"}`}
+            >
+              {excluded ? tx("excluded") : tx("exclude")}
+            </button>
+          </div>
         )}
       </div>
     </div>
