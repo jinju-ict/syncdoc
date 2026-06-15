@@ -522,6 +522,90 @@ Rules: preserve meaning exactly — do not add, remove, or reinterpret. Keep all
 }
 
 // ---------------------------------------------------------------------------
+// extractFileText — 이미지·PDF에서 텍스트/핵심 내용 추출 (비전 모델, 새 의존성 없음)
+// Anthropic: 이미지+PDF / OpenAI 호환: 이미지만 / 로컬(ollama): 미지원 → ok:false
+// ---------------------------------------------------------------------------
+
+const EXTRACT_PROMPT = `이 파일에 담긴 텍스트와 핵심 내용을 한국어로 간결히 추출·정리하라.
+표·수치는 핵심만 옮긴다. 추출할 내용이 없으면 정확히 빈 문자열만 출력하라.
+인사말·서론·설명·코드펜스 금지 — 추출된 내용 본문만.`;
+
+export async function extractFileText(
+  buf: Buffer,
+  mime: string,
+  filename: string
+): Promise<TranslateResult> {
+  const cfg = resolveProvider();
+  if (!cfg.ok) return cfg;
+  const isPdf = mime === "application/pdf" || /\.pdf$/i.test(filename);
+  const isImg = mime.startsWith("image/");
+  if (!isPdf && !isImg) return { ok: false, error: "이미지·PDF만 추출할 수 있습니다." };
+  const b64 = buf.toString("base64");
+
+  try {
+    if (cfg.provider === "anthropic") {
+      const client = new Anthropic({ apiKey: cfg.apiKey });
+      const fileBlock = isPdf
+        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
+        : { type: "image", source: { type: "base64", media_type: mime, data: b64 } };
+      const response = await client.messages.create({
+        model: cfg.model,
+        max_tokens: 4000,
+        messages: [
+          {
+            role: "user",
+            content: [fileBlock, { type: "text", text: EXTRACT_PROMPT }] as unknown as Anthropic.MessageParam["content"],
+          },
+        ],
+      });
+      logUsage("anthropic", cfg.model, `extractFile(${isPdf ? "pdf" : "img"})`, response.usage.input_tokens, response.usage.output_tokens);
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n")
+        .trim();
+      return { ok: true, md: text };
+    }
+
+    if (cfg.provider === "openai") {
+      if (isPdf)
+        return { ok: false, error: "현재 OpenAI 비전 경로는 이미지만 지원합니다 (PDF는 Anthropic에서)." };
+      const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify({
+          model: cfg.model,
+          max_completion_tokens: 4000,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: EXTRACT_PROMPT },
+                { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } },
+              ],
+            },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.text().catch(() => "")).slice(0, 300);
+        return { ok: false, error: `openai 비전 오류 (HTTP ${res.status}): ${body}` };
+      }
+      const data = (await res.json()) as {
+        choices?: { message?: { content?: string | null } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      logUsage("openai", cfg.model, "extractFile(img)", data.usage?.prompt_tokens ?? 0, data.usage?.completion_tokens ?? 0);
+      return { ok: true, md: (data.choices?.[0]?.message?.content ?? "").trim() };
+    }
+
+    return { ok: false, error: "로컬 모델은 파일 내용 추출을 지원하지 않습니다." };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 제안 옵션 공용 스키마 (suggestReplies가 사용)
 // ---------------------------------------------------------------------------
 

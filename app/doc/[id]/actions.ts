@@ -7,7 +7,7 @@ import { getSession } from "@/lib/session";
 import * as repo from "@/lib/repo";
 import type { Lang, ProjectRole, Role } from "@/lib/repo";
 import { isSectionKey, type SectionKey } from "@/lib/sections";
-import { suggestReplies } from "@/lib/ai";
+import { suggestReplies, extractFileText } from "@/lib/ai";
 import type { SuggestResult } from "@/lib/ai";
 import { saveUploadedFile, isTextMime, MAX_UPLOAD_BYTES } from "@/lib/uploads";
 import {
@@ -109,13 +109,29 @@ export async function uploadAttachment(
     const { path: savedPath } = await saveUploadedFile(buf, file.name);
     const mime = file.type || "application/octet-stream";
     const isText = isTextMime(mime, file.name);
-    const textExcerpt = isText ? buf.toString("utf8").slice(0, 8000) : null;
+    let textExcerpt: string | null = isText ? buf.toString("utf8").slice(0, 8000) : null;
 
-    // 메시지 본문: 캡션 + 파일 표식 (+ 텍스트 파일이면 본문도 AI가 읽도록 포함)
+    // 이미지·PDF: 비전 모델로 내용 추출(가능하면) → 메시지에 실어 분류·증류에 사용.
+    // 큰 파일(>4MB)은 비용·지연을 피해 건너뛴다. 추출 실패/미지원이면 첨부만.
+    let extracted = "";
+    const extractable =
+      !isText &&
+      buf.byteLength <= 4 * 1024 * 1024 &&
+      (mime.startsWith("image/") || mime === "application/pdf");
+    if (extractable) {
+      const ex = await extractFileText(buf, mime, file.name);
+      if (ex.ok && ex.md.trim()) {
+        extracted = ex.md.trim().slice(0, 8000);
+        textExcerpt = extracted;
+      }
+    }
+
+    // 메시지 본문: 캡션 + 파일 표식 (+ 텍스트/추출된 내용은 AI가 읽도록 포함)
     const lines: string[] = [];
     if (caption) lines.push(caption);
     lines.push(`📎 ${file.name}`);
     if (isText && textExcerpt) lines.push("\n```\n" + textExcerpt + "\n```");
+    else if (extracted) lines.push(`\n> 첨부 내용:\n> ${extracted.replace(/\n/g, "\n> ")}`);
     const md = lines.join("\n");
 
     const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
