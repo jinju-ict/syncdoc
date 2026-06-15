@@ -68,15 +68,6 @@ CREATE TABLE IF NOT EXISTS blocks (
   seq INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS translations (
-  block_id INTEGER PRIMARY KEY REFERENCES blocks(id),
-  target_role TEXT NOT NULL CHECK (target_role IN ('planner','developer')),
-  translated_md TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','ok','failed')),
-  created_at TEXT NOT NULL,
-  attempt_at TEXT
-);
-
 -- N직군 × 자연어 번역: 블록 × 대상 직군(4) × 언어(3)별 번역 1행.
 CREATE TABLE IF NOT EXISTS block_translations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,7 +220,7 @@ CREATE TABLE IF NOT EXISTS translation_cache (
 );
 
 -- 잠금 불변식 2중 방어 (계획 §핵심 불변식): 잠긴 블록은 UPDATE/DELETE 모두 영구 불가.
--- 번역본은 별도 테이블(translations)이므로 이 트리거는 번역 기록을 막지 않는다.
+-- 번역본은 별도 테이블(block_translations)이므로 이 트리거는 번역 기록을 막지 않는다.
 CREATE TRIGGER IF NOT EXISTS blocks_locked_immutable_update
 BEFORE UPDATE ON blocks
 WHEN old.status = 'locked'
@@ -337,23 +328,6 @@ function migrate(sqlite: Database.Database) {
     sqlite.exec("ALTER TABLE section_content ADD COLUMN source_sig TEXT");
   }
 
-  // 구 translations(2축, PK=block_id) → block_translations(4직군)로 1회 이관 (멱등).
-  const btCount = (
-    sqlite.prepare("SELECT COUNT(*) AS c FROM block_translations").get() as {
-      c: number;
-    }
-  ).c;
-  const hasOldTranslations = sqlite
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='translations'"
-    )
-    .get();
-  if (btCount === 0 && hasOldTranslations) {
-    sqlite.exec(
-      `INSERT OR IGNORE INTO block_translations (block_id, target_role, translated_md, status, created_at, attempt_at)
-       SELECT block_id, target_role, translated_md, status, created_at, attempt_at FROM translations`
-    );
-  }
 
   // 언어 차원 추가 — 구 block_translations(키 block_id+role)를 (block_id+role+lang)으로 재생성.
   // 기존 행은 ko로 이관. block_translations에 들어오는 FK가 없어 재생성 안전.

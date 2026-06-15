@@ -144,19 +144,6 @@ export const blocks = sqliteTable("blocks", {
   seq: integer("seq"),
 });
 
-export const translations = sqliteTable("translations", {
-  blockId: integer("block_id")
-    .primaryKey()
-    .references(() => blocks.id),
-  targetRole: text("target_role", { enum: ["planner", "developer"] }).notNull(),
-  translatedMd: text("translated_md"),
-  status: text("status", { enum: ["pending", "ok", "failed"] })
-    .notNull()
-    .default("pending"),
-  createdAt: text("created_at").notNull(),
-  attemptAt: text("attempt_at"),
-});
-
 export const suggestions = sqliteTable("suggestions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   blockId: integer("block_id")

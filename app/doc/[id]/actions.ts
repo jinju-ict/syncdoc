@@ -193,36 +193,6 @@ export async function requestReplySuggestions(
 }
 
 /**
- * 메시지 분류 교정 (편집자 이상) — 핀(백서 반영 강제)·제외·절 재분류.
- * AI 자동 분류 결과를 사람이 바로잡는 경로 (증류는 이 결과를 입력으로 쓴다).
- */
-export async function correctMessageClassification(
-  docId: number,
-  messageId: number,
-  change: { pinned?: boolean; excluded?: boolean; section?: string | null }
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await requireSession();
-  const projectId = repo.getProjectIdForDoc(docId);
-  if (projectId != null) {
-    const m = repo.getMembership(projectId, session.uid);
-    if (!m || (m.perm !== "owner" && m.perm !== "editor"))
-      return { ok: false, error: "교정 권한이 없습니다 (편집자 이상)." };
-  }
-  if (change.pinned !== undefined) repo.setMessagePinned(messageId, change.pinned);
-  if (change.excluded !== undefined) repo.setMessageExcluded(messageId, change.excluded);
-  if (change.section !== undefined) {
-    // null = AI 분류값 사용, 그 외엔 유효 절 키만 반영
-    const sec =
-      change.section === null
-        ? null
-        : asSection(change.section);
-    if (change.section === null || sec) repo.setMessageOverrideSection(messageId, sec);
-  }
-  revalidatePath(`/doc/${docId}`);
-  return { ok: true };
-}
-
-/**
  * 내 숙련도 레벨 변경 — 이후 새로 생성되는 번역(새 블록·재시도)부터 적용된다.
  * 이미 완료(ok)된 번역은 다시 생성하지 않는다 (비용·히스토리 보존).
  */

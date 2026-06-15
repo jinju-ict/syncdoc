@@ -1480,20 +1480,12 @@ export function getAttachment(
 }
 
 // ---------------------------------------------------------------------------
-// v0.2 메시지 관련도·분류 (message_relevance) — AI 판정 + 사람 교정.
+// v0.2 메시지 관련도·분류 (message_relevance) — AI 자동 판정.
+// (pinned/excluded/override_section_key 컬럼은 증류 입력 필터로 읽히고,
+//  향후 백서 화면의 교정 기능을 위해 보존된다 — 현재 쓰기 경로는 없다)
 // ---------------------------------------------------------------------------
 
-export type MessageRelevance = {
-  messageId: number;
-  aiSectionKey: string | null;
-  aiRelevance: number | null;
-  aiReason: string | null;
-  pinned: boolean;
-  excluded: boolean;
-  overrideSectionKey: string | null;
-};
-
-/** AI 분류 결과 기록 (사람 교정값 pinned/excluded/override는 보존) */
+/** AI 분류 결과 기록 */
 export function upsertMessageRelevanceAI(args: {
   messageId: number;
   aiSectionKey: string | null;
@@ -1521,67 +1513,6 @@ export function upsertMessageRelevanceAI(args: {
     );
 }
 
-function ensureRelevanceRow(messageId: number): void {
-  sqlite
-    .prepare(
-      "INSERT OR IGNORE INTO message_relevance (message_id, updated_at) VALUES (?, ?)"
-    )
-    .run(messageId, now());
-}
-
-/** 사람 교정: 백서 반영 핀 토글 */
-export function setMessagePinned(messageId: number, pinned: boolean): void {
-  ensureRelevanceRow(messageId);
-  sqlite
-    .prepare(
-      "UPDATE message_relevance SET pinned = ?, updated_at = ? WHERE message_id = ?"
-    )
-    .run(pinned ? 1 : 0, now(), messageId);
-}
-
-/** 사람 교정: 백서 제외 토글 */
-export function setMessageExcluded(messageId: number, excluded: boolean): void {
-  ensureRelevanceRow(messageId);
-  sqlite
-    .prepare(
-      "UPDATE message_relevance SET excluded = ?, updated_at = ? WHERE message_id = ?"
-    )
-    .run(excluded ? 1 : 0, now(), messageId);
-}
-
-/** 사람 교정: 절 재분류 (NULL이면 AI 분류값 사용) */
-export function setMessageOverrideSection(
-  messageId: number,
-  sectionKey: string | null
-): void {
-  ensureRelevanceRow(messageId);
-  sqlite
-    .prepare(
-      "UPDATE message_relevance SET override_section_key = ?, updated_at = ? WHERE message_id = ?"
-    )
-    .run(sectionKey, now(), messageId);
-}
-
-export function getMessageRelevance(
-  messageId: number
-): MessageRelevance | null {
-  const row = sqlite
-    .prepare(
-      `SELECT message_id AS messageId, ai_section_key AS aiSectionKey,
-              ai_relevance AS aiRelevance, ai_reason AS aiReason,
-              pinned, excluded, override_section_key AS overrideSectionKey
-       FROM message_relevance WHERE message_id = ?`
-    )
-    .get(messageId) as
-    | (Omit<MessageRelevance, "pinned" | "excluded"> & {
-        pinned: number;
-        excluded: number;
-      })
-    | undefined;
-  if (!row) return null;
-  return { ...row, pinned: row.pinned === 1, excluded: row.excluded === 1 };
-}
-
 /** 분류 작업 — 아직 AI 분류되지 않은 메시지(잠긴 블록) */
 export type ClassifyJob = { messageId: number; sourceMd: string };
 
@@ -1600,47 +1531,6 @@ export function ensureMessageClassifications(docId: number): ClassifyJob[] {
        ORDER BY b.locked_at ASC, b.seq ASC`
     )
     .all(docId) as ClassifyJob[];
-}
-
-/** 메시지별 분류·관련도·교정 상태 (effective = override ?? ai) — 채팅 렌더용 */
-export type MessageRelevanceView = {
-  messageId: number;
-  sectionKey: string | null; // 사람 교정(override) 우선, 없으면 AI 분류
-  aiSectionKey: string | null;
-  relevance: number | null;
-  pinned: boolean;
-  excluded: boolean;
-  classified: boolean;
-};
-
-export function getMessageRelevances(docId: number): MessageRelevanceView[] {
-  const rows = sqlite
-    .prepare(
-      `SELECT mr.message_id AS messageId, mr.ai_section_key AS aiSectionKey,
-              mr.ai_relevance AS relevance, mr.pinned, mr.excluded,
-              mr.override_section_key AS overrideSectionKey, mr.classified_at AS classifiedAt
-       FROM message_relevance mr
-       JOIN blocks b ON b.id = mr.message_id
-       WHERE b.doc_id = ?`
-    )
-    .all(docId) as {
-    messageId: number;
-    aiSectionKey: string | null;
-    relevance: number | null;
-    pinned: number;
-    excluded: number;
-    overrideSectionKey: string | null;
-    classifiedAt: string | null;
-  }[];
-  return rows.map((r) => ({
-    messageId: r.messageId,
-    sectionKey: r.overrideSectionKey ?? r.aiSectionKey,
-    aiSectionKey: r.aiSectionKey,
-    relevance: r.relevance,
-    pinned: r.pinned === 1,
-    excluded: r.excluded === 1,
-    classified: r.classifiedAt !== null,
-  }));
 }
 
 /**
