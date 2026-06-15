@@ -7,18 +7,13 @@ import type { Lang } from "./schema";
 import type { ProjectRole, Permission } from "./schema";
 
 type Key =
-  // 문서 렌즈/리더
-  | "lens.paper" | "lens.side" | "lens.conv" | "lens.data"
+  // 문서 렌즈/리더 (대화 + 백서)
+  | "lens.paper" | "lens.conv"
   | "toc" | "agreementStatus" | "continueConversation" | "startDiscussion"
-  | "notWritten" | "distill" | "distilled" | "distilling"
-  | "distillNone" | "distillCached" | "distillDone" | "export"
-  | "docInfo" | "status" | "agreement" | "createdAt" | "members"
+  | "notWritten" | "export"
+  | "status" | "agreement" | "createdAt" | "members"
   | "agreed" | "discussing" | "draft" | "noAgreementItems"
-  | "sectionConversation" | "perspectiveSuffix"
-  // 데이터(RAG) 렌즈
-  | "data.title" | "data.sub" | "data.query" | "data.clear" | "data.chunks"
-  | "data.schema" | "data.qAgreed" | "data.qDiscussing" | "data.qEmpty" | "data.qCounts"
-  | "kind.meta" | "kind.section" | "kind.empty"
+  | "perspectiveSuffix"
   // 기록(회의록/릴리스)
   | "rec.heading" | "rec.headingSub" | "rec.minutes" | "rec.minutesSub"
   | "rec.releases" | "rec.releasesSub" | "rec.minutesEmpty" | "rec.releasesEmpty"
@@ -50,24 +45,17 @@ type Key =
 
 const DICT: Record<Lang, Record<Key, string>> = {
   ko: {
-    "lens.paper": "백서", "lens.side": "나란히", "lens.conv": "대화", "lens.data": "데이터",
+    "lens.paper": "백서", "lens.conv": "대화",
     toc: "목차", agreementStatus: "합의 현황", continueConversation: "대화 이어가기", startDiscussion: "논의 시작",
     notWritten: "아직 작성 전입니다. 대화에서 이 주제를 논의하면 합의된 내용이 여기에 채워집니다.",
-    distill: "백서에 반영 (증류)", distilled: "✓ 백서에 반영됨", distilling: "증류 중…",
-    distillNone: "대화가 쌓이면 백서로 증류할 수 있어요", distillCached: "이미 최신입니다", distillDone: "백서에 반영했어요",
-    export: "내보내기", docInfo: "문서 정보", status: "상태", agreement: "합의", createdAt: "생성일", members: "팀원",
+    export: "내보내기", status: "상태", agreement: "합의", createdAt: "생성일", members: "팀원",
     agreed: "합의됨", discussing: "논의 중", draft: "초안", noAgreementItems: "아직 합의할 항목이 없습니다.",
-    sectionConversation: "대화", perspectiveSuffix: "시점",
-    "data.title": "데이터 · RAG",
-    "data.sub": "백서의 모든 절·항목이 안정 키와 상태를 가진 검색 가능한 청크가 됩니다. 표준 구조라 AI가 기계적으로 질의할 수 있습니다.",
-    "data.query": "메타데이터 질의", "data.clear": "지우기", "data.chunks": "인덱싱 청크", "data.schema": "RAG 색인 스키마",
-    "data.qAgreed": "합의된 항목은?", "data.qDiscussing": "논의 중인 항목은?", "data.qEmpty": "작성 전 절은?", "data.qCounts": "절별 항목 수는?",
-    "kind.meta": "메타", "kind.section": "세부 항목", "kind.empty": "절(빈)",
+    perspectiveSuffix: "시점",
     "rec.heading": "기록", "rec.headingSub": "백서 대화에서 자동 생성됩니다 — 따로 작성하지 않습니다.",
     "rec.minutes": "회의록", "rec.minutesSub": "대화를 날짜별로 정리",
     "rec.releases": "릴리스", "rec.releasesSub": "합의·증류 시점의 결정 스냅샷",
     "rec.minutesEmpty": "아직 대화가 없습니다. 백서에서 논의를 시작하면 여기에 회의록이 쌓입니다.",
-    "rec.releasesEmpty": "아직 합의된 결정이 없습니다. 나란히 렌즈에서 \"백서에 반영(증류)\"하면 릴리스가 박제됩니다.",
+    "rec.releasesEmpty": "아직 합의된 결정이 없습니다. 대화가 쌓이면 AI가 백서를 갱신하면서 그 시점의 결정이 릴리스로 기록됩니다.",
     "rec.backProject": "← 프로젝트", "rec.count": "건",
     "pj.back": "← 내 프로젝트", "pj.myRole": "내 직군", "pj.myPerm": "내 권한",
     "pj.whitepaper": "백서", "pj.records": "기록", "pj.recordsAuto": "대화에서 자동 생성",
@@ -96,24 +84,17 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "type.project": "프로젝트",
   },
   en: {
-    "lens.paper": "Whitepaper", "lens.side": "Side-by-side", "lens.conv": "Conversation", "lens.data": "Data",
+    "lens.paper": "Whitepaper", "lens.conv": "Conversation",
     toc: "Contents", agreementStatus: "Agreement", continueConversation: "Continue conversation", startDiscussion: "Start discussion",
     notWritten: "Not written yet. Once this topic is discussed and agreed in the conversation, it will appear here.",
-    distill: "Add to whitepaper (distill)", distilled: "✓ Added to whitepaper", distilling: "Distilling…",
-    distillNone: "Distill into the whitepaper once a conversation builds up", distillCached: "Already up to date", distillDone: "Added to the whitepaper",
-    export: "Export", docInfo: "Document info", status: "Status", agreement: "Agreement", createdAt: "Created", members: "Members",
+    export: "Export", status: "Status", agreement: "Agreement", createdAt: "Created", members: "Members",
     agreed: "Agreed", discussing: "In discussion", draft: "Draft", noAgreementItems: "No items to agree on yet.",
-    sectionConversation: "Conversation", perspectiveSuffix: "view",
-    "data.title": "Data · RAG",
-    "data.sub": "Every section and item of the whitepaper becomes a searchable chunk with a stable key and status — a standard structure AI can query mechanically.",
-    "data.query": "Metadata query", "data.clear": "Clear", "data.chunks": "Indexed chunks", "data.schema": "RAG index schema",
-    "data.qAgreed": "Which items are agreed?", "data.qDiscussing": "Which are in discussion?", "data.qEmpty": "Which sections are empty?", "data.qCounts": "Items per section?",
-    "kind.meta": "meta", "kind.section": "item", "kind.empty": "section (empty)",
+    perspectiveSuffix: "view",
     "rec.heading": "Records", "rec.headingSub": "Auto-generated from the whitepaper conversation — not written separately.",
     "rec.minutes": "Minutes", "rec.minutesSub": "Conversation organized by date",
     "rec.releases": "Releases", "rec.releasesSub": "Decision snapshots at each agreement",
     "rec.minutesEmpty": "No conversation yet. Once you start discussing in the whitepaper, minutes accumulate here.",
-    "rec.releasesEmpty": "No agreed decisions yet. Use \"Add to whitepaper (distill)\" in the side-by-side lens to capture a release.",
+    "rec.releasesEmpty": "No agreed decisions yet. As the conversation builds, the AI updates the whitepaper and snapshots each change as a release.",
     "rec.backProject": "← Project", "rec.count": "",
     "pj.back": "← My projects", "pj.myRole": "My role", "pj.myPerm": "My permission",
     "pj.whitepaper": "Whitepaper", "pj.records": "Records", "pj.recordsAuto": "auto-generated from conversation",
@@ -142,24 +123,17 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "type.project": "Project",
   },
   ja: {
-    "lens.paper": "白書", "lens.side": "並べて", "lens.conv": "会話", "lens.data": "データ",
+    "lens.paper": "白書", "lens.conv": "会話",
     toc: "目次", agreementStatus: "合意状況", continueConversation: "会話を続ける", startDiscussion: "議論を開始",
     notWritten: "まだ未作成です。会話でこのテーマを議論し合意すると、ここに反映されます。",
-    distill: "白書に反映（蒸留）", distilled: "✓ 白書に反映済み", distilling: "蒸留中…",
-    distillNone: "会話が蓄積されると白書に蒸留できます", distillCached: "すでに最新です", distillDone: "白書に反映しました",
-    export: "エクスポート", docInfo: "ドキュメント情報", status: "ステータス", agreement: "合意", createdAt: "作成日", members: "メンバー",
+    export: "エクスポート", status: "ステータス", agreement: "合意", createdAt: "作成日", members: "メンバー",
     agreed: "合意済み", discussing: "議論中", draft: "下書き", noAgreementItems: "まだ合意する項目がありません。",
-    sectionConversation: "会話", perspectiveSuffix: "視点",
-    "data.title": "データ · RAG",
-    "data.sub": "白書のすべての節・項目が安定キーと状態を持つ検索可能なチャンクになります。標準構造なのでAIが機械的に問い合わせできます。",
-    "data.query": "メタデータ照会", "data.clear": "クリア", "data.chunks": "インデックスチャンク", "data.schema": "RAG インデックススキーマ",
-    "data.qAgreed": "合意済みの項目は？", "data.qDiscussing": "議論中の項目は？", "data.qEmpty": "未作成の節は？", "data.qCounts": "節ごとの項目数は？",
-    "kind.meta": "メタ", "kind.section": "項目", "kind.empty": "節（空）",
+    perspectiveSuffix: "視点",
     "rec.heading": "記録", "rec.headingSub": "白書の会話から自動生成されます — 別途作成しません。",
     "rec.minutes": "議事録", "rec.minutesSub": "会話を日付ごとに整理",
     "rec.releases": "リリース", "rec.releasesSub": "合意・蒸留時点の決定スナップショット",
     "rec.minutesEmpty": "まだ会話がありません。白書で議論を始めると、ここに議事録が蓄積されます。",
-    "rec.releasesEmpty": "まだ合意された決定がありません。並べてレンズで「白書に反映（蒸留）」するとリリースが記録されます。",
+    "rec.releasesEmpty": "まだ合意された決定がありません。会話が蓄積されるとAIが白書を更新し、その時点の決定がリリースとして記録されます。",
     "rec.backProject": "← プロジェクト", "rec.count": "件",
     "pj.back": "← マイプロジェクト", "pj.myRole": "自分の職種", "pj.myPerm": "自分の権限",
     "pj.whitepaper": "白書", "pj.records": "記録", "pj.recordsAuto": "会話から自動生成",
