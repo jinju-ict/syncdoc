@@ -1,0 +1,25 @@
+# 이미지에 들어가면 안 되거나 재생성되는 것들
+node_modules
+.next
+.git
+.gitignore
+
+# 비밀·로컬 데이터 (환경변수는 Cloud Run에서 주입)
+.env
+.env.*
+!.env.local.example
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+test-run.db
+uploads
+
+# 잡다
+npm-debug.log*
+.vscode
+.omc
+coverage
+README.md
+CHANGELOG.md
+docs
