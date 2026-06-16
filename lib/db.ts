@@ -2,7 +2,6 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
-import { hashPassword } from "./password";
 
 const DB_PATH =
   process.env.SYNCDOC_DB_PATH ?? path.join(process.cwd(), "syncdoc.db");
@@ -370,119 +369,13 @@ function migrate(sqlite: Database.Database) {
   }
 }
 
-function seed(sqlite: Database.Database) {
-  const now = new Date().toISOString();
-
-  // 기존 시드 계정 (username 로그인) — 하위 호환 유지
-  const insertUser = sqlite.prepare(
-    "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)"
-  );
-  insertUser.run("planner", hashPassword("demo1234"), "planner");
-  insertUser.run("developer", hashPassword("demo1234"), "developer");
-  sqlite
-    .prepare(
-      "INSERT OR IGNORE INTO documents (id, title, created_at) VALUES (1, ?, ?)"
-    )
-    .run("샘플 프로젝트 문서", now);
-
-  // 이메일 가입 데모 계정 (다중 사용자·동일 직군 협업 시연용)
-  const insertAccount = sqlite.prepare(
-    "INSERT OR IGNORE INTO users (username, email, name, password_hash, role) VALUES (?, ?, ?, ?, ?)"
-  );
-  const demoPw = hashPassword("demo1234");
-  insertAccount.run("mina", "mina@team.co", "박미나", demoPw, "planner");
-  insertAccount.run("jun", "jun@team.co", "Jun", demoPw, "developer");
-  insertAccount.run("sora", "sora@team.co", "Sora", demoPw, "developer");
-  const uid = (email: string): number =>
-    (sqlite.prepare("SELECT id FROM users WHERE email = ?").get(email) as
-      | { id: number }
-      | undefined)?.id ?? 0;
-  const mina = uid("mina@team.co");
-  const jun = uid("jun@team.co");
-  const sora = uid("sora@team.co");
-
-  // 데모 프로젝트는 projects가 비었을 때만 1회 시드 (멱등)
-  const projectCount = (
-    sqlite.prepare("SELECT COUNT(*) AS c FROM projects").get() as { c: number }
-  ).c;
-  if (projectCount === 0 && mina && jun && sora) {
-    const newProject = (title: string, createdBy: number): number => {
-      const r = sqlite
-        .prepare(
-          "INSERT INTO projects (title, type, link_shared, created_by, created_at) VALUES (?, 'project', 0, ?, ?)"
-        )
-        .run(title, createdBy, now);
-      return Number(r.lastInsertRowid);
-    };
-    const addMember = (
-      projectId: number,
-      userId: number,
-      role: string,
-      perm: string
-    ): void => {
-      sqlite
-        .prepare(
-          "INSERT OR IGNORE INTO project_members (project_id, user_id, role, perm, created_at) VALUES (?, ?, ?, ?, ?)"
-        )
-        .run(projectId, userId, role, perm, now);
-    };
-    const newProjectDoc = (projectId: number, title: string): void => {
-      sqlite
-        .prepare(
-          "INSERT INTO documents (title, project_id, created_at) VALUES (?, ?, ?)"
-        )
-        .run(title, projectId, now);
-    };
-
-    // 프로젝트 1 — mina(소유자) + jun·sora, mina의 메인 문서
-    const p1 = newProject("팝업스토어 오픈 프로젝트", mina);
-    addMember(p1, mina, "planner", "owner");
-    addMember(p1, jun, "developer", "editor");
-    addMember(p1, sora, "designer", "editor");
-    newProjectDoc(p1, "팝업스토어 오픈 프로젝트");
-
-    // 프로젝트 2 — sora 소유, mina에게 보낸 대기 중 초대 (받은 초대 시연)
-    const p2 = newProject("브랜드 캠페인 킥오프", sora);
-    addMember(p2, sora, "designer", "owner");
-    newProjectDoc(p2, "브랜드 캠페인 킥오프");
-    sqlite
-      .prepare(
-        "INSERT INTO invites (project_id, email, role, perm, invited_by, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)"
-      )
-      .run(p2, "mina@team.co", "designer", "editor", sora, now);
-  }
-
-  // 백서 데모 콘텐츠 — section_content가 비었을 때만 첫 프로젝트 메인 문서에 1회 시드.
-  // 백서 리더가 "일반 문서"처럼 보이도록 절별 산문을 채워둔다.
-  const scCount = (
-    sqlite.prepare("SELECT COUNT(*) AS c FROM section_content").get() as {
-      c: number;
-    }
-  ).c;
-  const firstProjectDoc = sqlite
-    .prepare(
-      `SELECT d.id FROM documents d JOIN projects p ON p.id = d.project_id
-       ORDER BY p.id ASC, d.id ASC LIMIT 1`
-    )
-    .get() as { id: number } | undefined;
-  if (scCount === 0 && firstProjectDoc) {
-    const did = firstProjectDoc.id;
-    const sc = sqlite.prepare(
-      `INSERT INTO section_content (doc_id, section_key, sub_key, title, body_md, status, order_index, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    const rows: [string, string, string, string, string, number][] = [
-      ["why", "why.goal", "프로젝트 목적", "팝업스토어를 통해 신규 고객에게 브랜드를 직접 경험시키고, 오프라인 방문을 온라인 멤버십 가입으로 연결한다. 2주 운영 기간 동안 방문자 경험과 가입 전환을 함께 끌어올리는 것을 목표로 한다.", "agreed", 0],
-      ["why", "why.target", "지향점", "‘구경하고 끝나는 팝업’이 아니라, 다녀간 사람이 자연스럽게 멤버십으로 이어지는 흐름을 만든다. 모든 결정은 이 전환 흐름을 해치지 않는 선에서 내린다.", "agreed", 1],
-      ["what", "what.deliverable", "핵심 결과물", "현장 체험 존, QR 기반 멤버십 가입 플로우, 운영 대시보드 세 가지를 결과물로 한다. 각 결과물은 오픈 전 리허설에서 한 번씩 점검한다.", "agreed", 0],
-      ["what", "what.tasks", "세부 과업", "체험 존 동선 설계, 가입 폼 간소화(필수 입력 최소화), 방문·가입 집계 대시보드 구성을 포함한다. 집계 항목의 상세 정의는 논의 중이다.", "discussing", 1],
-      ["how", "how.method", "수행 방식과 제약", "기획·디자인·개발이 매일 짧게 동기화하고, 현장 변경은 당일 합의로 반영한다. 외부 결제 연동은 이번 범위에서 제외한다.", "discussing", 0],
-    ];
-    for (const [section, sub, title, body, status, order] of rows) {
-      sc.run(did, section, sub, title, body, status, order, now);
-    }
-    // rules 절은 의도적으로 비워 "작성 전" 플레이스홀더를 시연한다.
-  }
+/**
+ * 시드 — 의도적으로 비움. **완전 백지 초기 상태**(데모 계정·프로젝트·콘텐츠 없음)로 시작한다.
+ * 사용자는 회원가입 → 프로젝트 생성(= 채팅방 자동 생성, repo.createProject)으로 시작한다.
+ * 스키마·마이그레이션·트리거는 createConnection의 DDL/migrate에서 이미 준비된다.
+ */
+function seed(_sqlite: Database.Database) {
+  // no-op
 }
 
 // Next.js dev HMR에서 커넥션이 중복 생성되지 않도록 globalThis에 캐시
