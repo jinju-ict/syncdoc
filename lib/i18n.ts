@@ -31,6 +31,7 @@ type Key =
   // 멤버/초대
   | "mem.invite" | "mem.email" | "mem.role" | "mem.perm" | "mem.send"
   | "mem.added" | "mem.sent" | "mem.needEmail" | "mem.removeConfirm" | "mem.me"
+  | "mem.emailed" | "mem.recorded"
   // 인증 (로그인/회원가입)
   | "auth.tagline" | "auth.loginTitle" | "auth.signupTitle" | "auth.name"
   | "auth.email" | "auth.password" | "auth.signupStart" | "auth.haveAccount"
@@ -79,6 +80,7 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "mem.invite": "팀원 초대", "mem.email": "이메일", "mem.role": "직군", "mem.perm": "권한", "mem.send": "초대 보내기",
     "mem.added": "팀원을 추가했어요", "mem.sent": "초대를 보냈어요", "mem.needEmail": "이메일을 입력하세요",
     "mem.removeConfirm": "님을 프로젝트에서 제거할까요?", "mem.me": "(나)",
+    "mem.emailed": "초대 메일을 보냈어요", "mem.recorded": "초대를 기록했어요 (상대가 같은 이메일로 가입하면 보여요)",
     "home.myProjects": "내 프로젝트", "home.newProject": "새 프로젝트", "home.received": "받은 초대",
     "home.accept": "수락", "home.decline": "거절", "home.openDoc": "문서 열기", "home.memberCount": "멤버",
     "home.noProjects": "아직 프로젝트가 없습니다. 오른쪽 위 새 프로젝트로 시작하세요.",
@@ -127,6 +129,7 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "mem.invite": "Invite member", "mem.email": "Email", "mem.role": "Role", "mem.perm": "Permission", "mem.send": "Send invite",
     "mem.added": "Member added", "mem.sent": "Invite sent", "mem.needEmail": "Enter an email",
     "mem.removeConfirm": " — remove from the project?", "mem.me": "(you)",
+    "mem.emailed": "Invite email sent", "mem.recorded": "Invite saved (shows once they sign up with that email)",
     "home.myProjects": "My projects", "home.newProject": "New project", "home.received": "Received invites",
     "home.accept": "Accept", "home.decline": "Decline", "home.openDoc": "Open document", "home.memberCount": "members",
     "home.noProjects": "No projects yet. Start one with New project at the top right.",
@@ -175,6 +178,7 @@ const DICT: Record<Lang, Record<Key, string>> = {
     "mem.invite": "メンバー招待", "mem.email": "メール", "mem.role": "職種", "mem.perm": "権限", "mem.send": "招待を送る",
     "mem.added": "メンバーを追加しました", "mem.sent": "招待を送りました", "mem.needEmail": "メールを入力してください",
     "mem.removeConfirm": "さんをプロジェクトから削除しますか？", "mem.me": "（自分）",
+    "mem.emailed": "招待メールを送りました", "mem.recorded": "招待を記録しました（相手が同じメールで登録すると表示）",
     "home.myProjects": "マイプロジェクト", "home.newProject": "新規プロジェクト", "home.received": "受け取った招待",
     "home.accept": "承認", "home.decline": "辞退", "home.openDoc": "ドキュメントを開く", "home.memberCount": "メンバー",
     "home.noProjects": "まだプロジェクトがありません。右上の新規プロジェクトから始めましょう。",

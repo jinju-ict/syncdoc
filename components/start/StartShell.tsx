@@ -283,7 +283,13 @@ export default function StartShell({
     if (!r.ok) { showToast(r.error); return; }
     setInvEmail("");
     router.refresh();
-    showToast(r.data.added ? tt("mem.added") : tt("mem.sent"));
+    showToast(
+      r.data.added
+        ? tt("mem.added")
+        : r.data.emailed
+          ? tt("mem.emailed")
+          : tt("mem.recorded")
+    );
   }
   async function doAccept(iv: InviteInfo) {
     if (pending) return;

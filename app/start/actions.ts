@@ -10,6 +10,7 @@ import * as repo from "@/lib/repo";
 import type { Permission, ProjectRole } from "@/lib/repo";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { createSession, destroySession, getSession } from "@/lib/session";
+import { sendInviteEmail } from "@/lib/email";
 
 export type ActionResult<T = undefined> =
   | ({ ok: true } & (T extends undefined ? object : { data: T }))
@@ -86,7 +87,7 @@ export async function inviteAction(input: {
   email: string;
   role: string;
   perm: string;
-}): Promise<ActionResult<{ added: boolean }>> {
+}): Promise<ActionResult<{ added: boolean; emailed: boolean }>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "로그인이 필요합니다" };
   if (!repo.isProjectOwner(input.projectId, session.uid)) {
@@ -97,12 +98,19 @@ export async function inviteAction(input: {
   const role = asRole(input.role);
   const perm = asPerm(input.perm);
 
-  // 이미 가입한 계정이면 즉시 멤버 추가, 아니면 대기 중 초대로 남긴다
+  // 이미 가입한 계정이면 즉시 멤버 추가(메일 불필요), 아니면 대기 중 초대 + 초대 메일
   const { added } = repo.addMemberByEmail({ projectId: input.projectId, email, role, perm });
+  let emailed = false;
   if (!added) {
     repo.createInvite({ projectId: input.projectId, email, role, perm, invitedBy: session.uid });
+    // 미가입자에게만 초대 메일 발송 (RESEND 미설정이면 ok:false로 빠르게 반환 — DB 기록은 유지)
+    const inviter = repo.getUserById(session.uid);
+    const projectTitle = repo.getProjectMeta(input.projectId)?.title ?? "프로젝트";
+    const inviterName = inviter ? repo.accountDisplayName(inviter) : "팀원";
+    const sent = await sendInviteEmail({ to: email, projectTitle, inviterName });
+    emailed = sent.ok;
   }
-  return { ok: true, data: { added } };
+  return { ok: true, data: { added, emailed } };
 }
 
 export async function acceptInviteAction(input: {
