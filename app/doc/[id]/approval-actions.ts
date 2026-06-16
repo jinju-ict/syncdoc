@@ -21,7 +21,7 @@ export type ApprovalActionResult = { ok: true } | { ok: false; error: string };
 
 async function requireSession() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/start");
   return session;
 }
 

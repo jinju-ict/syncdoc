@@ -48,7 +48,7 @@ export default async function DocPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/start");
 
   const { id } = await params;
   const docId = Number(id);

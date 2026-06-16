@@ -30,7 +30,7 @@ const asProjectRole = (v: unknown): ProjectRole | null =>
 
 async function requireSession() {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/start");
   return session;
 }
 
