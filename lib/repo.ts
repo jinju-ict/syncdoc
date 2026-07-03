@@ -401,19 +401,75 @@ export function createDocument(title: string): number {
  * 보관/해제 — 상태 전환만 한다. 블록·번역·댓글·Abstract는 그대로 보존되므로
  * 내용 추적이 항상 가능하다. 삭제 경로는 제공하지 않는다.
  */
-export function setDocumentArchived(docId: number, archived: boolean): boolean {
-  const result = archived
-    ? sqlite
+export function setDocumentArchived(
+  docId: number,
+  archived: boolean,
+  actor?: { id: number; role: ProjectRole }
+): boolean {
+  // 상태 전환 + 활동 로그(누가·언제·무엇을)를 한 트랜잭션으로 — 실제로 상태가 바뀐
+  // 경우에만(중복 클릭·경합 무해) actor가 주어지면 append-only 기록을 남긴다.
+  const tx = sqlite.transaction(() => {
+    const ts = now();
+    const result = archived
+      ? sqlite
+          .prepare(
+            "UPDATE documents SET status = 'archived', archived_at = ? WHERE id = ? AND status = 'active'"
+          )
+          .run(ts, docId)
+      : sqlite
+          .prepare(
+            "UPDATE documents SET status = 'active', archived_at = NULL WHERE id = ? AND status = 'archived'"
+          )
+          .run(docId);
+    if (result.changes > 0 && actor) {
+      sqlite
         .prepare(
-          "UPDATE documents SET status = 'archived', archived_at = ? WHERE id = ? AND status = 'active'"
+          `INSERT INTO doc_activity (doc_id, action, actor_id, actor_role, created_at)
+           VALUES (?, ?, ?, ?, ?)`
         )
-        .run(now(), docId)
-    : sqlite
-        .prepare(
-          "UPDATE documents SET status = 'active', archived_at = NULL WHERE id = ? AND status = 'archived'"
-        )
-        .run(docId);
-  return result.changes > 0;
+        .run(docId, archived ? "archived" : "unarchived", actor.id, actor.role, ts);
+    }
+    return result.changes > 0;
+  });
+  return tx();
+}
+
+export type DocActivity = {
+  id: number;
+  action: "archived" | "unarchived";
+  actorId: number;
+  actorName: string;
+  actorRole: ProjectRole;
+  createdAt: string;
+};
+
+/** 문서의 보관/해제 활동 이력 — 최신순. 몰래 다시 여는 행위를 화면에 노출하기 위함. */
+export function listDocActivity(docId: number): DocActivity[] {
+  return sqlite
+    .prepare(
+      `SELECT a.id, a.action, a.actor_id AS actorId, u.username AS actorName,
+              a.actor_role AS actorRole, a.created_at AS createdAt
+       FROM doc_activity a JOIN users u ON u.id = a.actor_id
+       WHERE a.doc_id = ?
+       ORDER BY a.created_at DESC, a.id DESC`
+    )
+    .all(docId) as DocActivity[];
+}
+
+/**
+ * 문서에 대한 뷰어의 권한(owner/editor/viewer/link). 보관·해제 게이트에 쓴다.
+ * 비멤버는 null(거부). 레거시(프로젝트 없는) 문서는 소유 개념이 없어 owner로 취급(기존 허용).
+ */
+export function getDocPermission(
+  docId: number,
+  userId: number
+): Permission | null {
+  const projectId = getProjectIdForDoc(docId);
+  if (projectId != null) {
+    const m = getMembership(projectId, userId);
+    return m ? m.perm : null;
+  }
+  return "owner";
 }
 
 // ---------------------------------------------------------------------------
@@ -1603,6 +1659,25 @@ export function getDocProjectRole(
   }
   const u = getUserById(userId);
   return u?.role ?? null;
+}
+
+/**
+ * 문서 접근 자격 판정 (보안 게이트 — 크로스 테넌트 IDOR 방어).
+ * - 프로젝트 문서: 멤버만 허용, 비멤버는 `null`(거부). 반환 직군은 렌더링 뷰어 역할로도 쓴다.
+ * - 레거시(프로젝트 없는) 문서: 계정 전역 역할로 폴백(기존 동작 유지).
+ * getDocProjectRole은 "표시용 폴백"이라 거부하지 않으므로, 접근 허가 판정은 반드시 이 함수로 한다.
+ */
+export function requireDocAccess(
+  docId: number,
+  userId: number
+): ProjectRole | null {
+  const projectId = getProjectIdForDoc(docId);
+  if (projectId != null) {
+    const m = getMembership(projectId, userId);
+    return m ? m.role : null; // 비멤버 거부
+  }
+  const u = getUserById(userId);
+  return (u?.role as ProjectRole | undefined) ?? null; // 레거시 문서만
 }
 
 /** 프로젝트에 존재하는 서로 다른 직군들 (번역을 생성할 대상 직군 집합) */

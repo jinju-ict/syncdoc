@@ -11,8 +11,21 @@ import type { Role } from "./schema";
 export const SESSION_COOKIE = "syncdoc_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7일
 
-const SECRET =
-  process.env.SESSION_SECRET || "syncdoc-dev-secret-do-not-use-in-prod";
+// 운영(production)에서는 SESSION_SECRET이 반드시 있어야 한다. 없으면 공개된 개발용
+// 기본값으로 세션 서명이 위조 가능하므로, 세션을 다루는 첫 요청에서 즉시 실패시킨다(fail fast).
+// 지연 평가인 이유: 모듈 로드 시점(=`next build`의 NODE_ENV=production)에 throw하면 빌드가
+// 깨지므로, 실제 서명/검증이 일어나는 런타임에만 검사한다. 개발에서는 편의상 폴백.
+let cachedSecret: string | null = null;
+function getSecret(): string {
+  if (cachedSecret) return cachedSecret;
+  const s = process.env.SESSION_SECRET;
+  if (s && s.length > 0) return (cachedSecret = s);
+  if (process.env.NODE_ENV === "production")
+    throw new Error(
+      "SESSION_SECRET 환경변수가 필요합니다 (운영 환경). 세션 위조 방지를 위해 반드시 설정하세요."
+    );
+  return (cachedSecret = "syncdoc-dev-secret-do-not-use-in-prod");
+}
 
 export type Session = {
   uid: number;
@@ -22,7 +35,7 @@ export type Session = {
 };
 
 function sign(data: string): string {
-  return createHmac("sha256", SECRET).update(data).digest("base64url");
+  return createHmac("sha256", getSecret()).update(data).digest("base64url");
 }
 
 export function encodeSession(payload: Session): string {

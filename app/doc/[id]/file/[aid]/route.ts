@@ -23,13 +23,22 @@ export async function GET(
   if (!att || att.docId !== docId || att.kind !== "file" || !att.path)
     return new Response("Not found", { status: 404 });
 
+  // 접근 게이트 — 이 문서(프로젝트)의 멤버만. 비멤버는 존재를 숨겨 404 (파일 IDOR 방어).
+  if (!repo.requireDocAccess(att.docId, session.uid))
+    return new Response("Not found", { status: 404 });
+
   try {
     const buf = await readFile(att.path);
     const filename = encodeURIComponent(att.title ?? "file");
+    // 안전한 서빙: 진짜 이미지(SVG 제외)만 화면에 inline, 그 외는 전부 다운로드로 강제.
+    // nosniff로 브라우저의 MIME 추측 실행(업로드 HTML/스크립트) 차단 → 저장형 XSS 방어.
+    const mime = att.mime ?? "application/octet-stream";
+    const inlineSafe = mime.startsWith("image/") && mime !== "image/svg+xml";
     return new Response(buf, {
       headers: {
-        "Content-Type": att.mime ?? "application/octet-stream",
-        "Content-Disposition": `inline; filename*=UTF-8''${filename}`,
+        "Content-Type": inlineSafe ? mime : "application/octet-stream",
+        "Content-Disposition": `${inlineSafe ? "inline" : "attachment"}; filename*=UTF-8''${filename}`,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=3600",
       },
     });

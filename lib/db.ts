@@ -210,6 +210,17 @@ CREATE TABLE IF NOT EXISTS translation_cache (
   UNIQUE (source_hash, target_role, target_lang, level)
 );
 
+-- 문서 활동 로그 — 보관/해제 등 상태 변경을 "누가·언제·무엇을" append-only로 남긴다.
+-- 몰래 다시 여는 행위를 추적·노출하기 위한 감사 기록. 삭제·수정 경로 없음(insert 전용).
+CREATE TABLE IF NOT EXISTS doc_activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_id INTEGER NOT NULL REFERENCES documents(id),
+  action TEXT NOT NULL CHECK (action IN ('archived','unarchived')),
+  actor_id INTEGER NOT NULL REFERENCES users(id),
+  actor_role TEXT NOT NULL CHECK (actor_role IN ('planner','developer','designer','ops')),
+  created_at TEXT NOT NULL
+);
+
 -- 잠금 불변식 2중 방어 (계획 §핵심 불변식): 잠긴 블록은 UPDATE/DELETE 모두 영구 불가.
 -- 번역본은 별도 테이블(block_translations)이므로 이 트리거는 번역 기록을 막지 않는다.
 CREATE TRIGGER IF NOT EXISTS blocks_locked_immutable_update

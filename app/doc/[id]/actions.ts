@@ -74,7 +74,8 @@ export async function sendBlock(
   sectionKey: string | null = null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await requireSession();
-  const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
+  const role = repo.requireDocAccess(docId, session.uid);
+  if (!role) return { ok: false, error: "접근 권한이 없습니다." };
   let sent: repo.SentBlock;
   try {
     const blockId = repo.saveDraft(docId, { id: session.uid, role }, md, asSection(sectionKey));
@@ -97,6 +98,8 @@ export async function uploadAttachment(
   formData: FormData
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await requireSession();
+  const role = repo.requireDocAccess(docId, session.uid);
+  if (!role) return { ok: false, error: "접근 권한이 없습니다." };
   const file = formData.get("file");
   const caption = ((formData.get("caption") as string | null) ?? "").trim();
   if (!(file instanceof File) || file.size === 0)
@@ -134,7 +137,6 @@ export async function uploadAttachment(
     else if (extracted) lines.push(`\n> 첨부 내용:\n> ${extracted.replace(/\n/g, "\n> ")}`);
     const md = lines.join("\n");
 
-    const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
     const blockId = repo.saveDraft(docId, { id: session.uid, role }, md, null);
     const sent = repo.sendBlock(blockId, session.uid);
     repo.addAttachment({
@@ -163,7 +165,8 @@ export async function requestReplySuggestions(
   docId: number
 ): Promise<SuggestResult> {
   const session = await requireSession();
-  const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
+  const role = repo.requireDocAccess(docId, session.uid);
+  if (!role) return { ok: false, error: "접근 권한이 없습니다." };
   const lang = repo.getUserLang(session.uid);
   const convo = repo.getRecentMessages(docId, 12);
   // suggestReplies는 throw하지 않는 규약
@@ -201,6 +204,7 @@ export async function correctSectionMessage(
  */
 export async function setMyLevel(docId: number, level: string): Promise<void> {
   const session = await requireSession();
+  if (!repo.requireDocAccess(docId, session.uid)) return; // 비멤버 거부(무음)
   if (!repo.isExpertiseLevel(level)) return; // 화이트리스트 외 입력은 무시
   repo.setUserLevel(session.uid, level);
   revalidatePath(`/doc/${docId}`);
@@ -212,9 +216,10 @@ export async function setMyLevel(docId: number, level: string): Promise<void> {
  */
 export async function setMyLang(docId: number, lang: string): Promise<void> {
   const session = await requireSession();
+  const role = repo.requireDocAccess(docId, session.uid);
+  if (!role) return; // 비멤버 거부(무음)
   if (!repo.isLang(lang)) return;
   repo.setUserLang(session.uid, lang);
-  const role = repo.getDocProjectRole(docId, session.uid) ?? session.role;
   const projectId = repo.getProjectIdForDoc(docId);
   const blockJobs = repo.ensureBlockTranslations(docId, role, lang);
   const secJobs = repo.ensureSectionTranslations(docId, lang);
@@ -232,16 +237,32 @@ export async function setMyLang(docId: number, lang: string): Promise<void> {
  * 문서 보관/해제 — 상태 전환만. 모든 내용(블록·번역·댓글·Abstract)은 영구 보존되어
  * 추적 가능하다. 삭제 액션은 존재하지 않는다.
  */
+/** 보관/해제 권한 — 소유자·편집자만(뷰어 차단). 통과 시 활동 로그용 (작성자·직군) 반환. */
+function requireArchiveRight(
+  docId: number,
+  userId: number
+): { id: number; role: ProjectRole } | null {
+  const role = repo.requireDocAccess(docId, userId); // 멤버십(비멤버 null)
+  if (!role) return null;
+  const perm = repo.getDocPermission(docId, userId);
+  if (perm !== "owner" && perm !== "editor") return null; // 뷰어 차단
+  return { id: userId, role };
+}
+
 export async function archiveDocument(docId: number): Promise<void> {
-  await requireSession();
-  repo.setDocumentArchived(docId, true);
+  const session = await requireSession();
+  const actor = requireArchiveRight(docId, session.uid);
+  if (!actor) return; // 뷰어·비멤버 거부(무음)
+  repo.setDocumentArchived(docId, true, actor);
   revalidatePath(`/doc/${docId}`);
   revalidatePath("/");
 }
 
 export async function unarchiveDocument(docId: number): Promise<void> {
-  await requireSession();
-  repo.setDocumentArchived(docId, false);
+  const session = await requireSession();
+  const actor = requireArchiveRight(docId, session.uid);
+  if (!actor) return; // 뷰어·비멤버 거부(무음)
+  repo.setDocumentArchived(docId, false, actor);
   revalidatePath(`/doc/${docId}`);
   revalidatePath("/");
 }
@@ -256,7 +277,8 @@ export async function retryTranslation(
   targetRole: string,
   targetLang: string = "ko"
 ): Promise<void> {
-  await requireSession();
+  const session = await requireSession();
+  if (!repo.requireDocAccess(docId, session.uid)) return; // 비멤버 거부(무음)
   const role = asProjectRole(targetRole);
   if (!role) return; // 화이트리스트 외 입력 무시
   const job = repo.markTranslationRetry(blockId, role, asLang(targetLang));
