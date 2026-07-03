@@ -77,6 +77,8 @@ export async function approveDocument(
   docId: number
 ): Promise<ApprovalActionResult> {
   const session = await requireSession();
+  if (!repo.requireDocAccess(docId, session.uid))
+    return { ok: false, error: "접근 권한이 없습니다." };
 
   try {
     // 동의 주체의 직군은 프로젝트 멤버십에서 결정(2축 매핑), 폴백은 계정 역할
@@ -105,6 +107,8 @@ export async function approveDocument(
 export async function retryAbstract(
   docId: number
 ): Promise<ApprovalActionResult> {
-  await requireSession();
+  const session = await requireSession();
+  if (!repo.requireDocAccess(docId, session.uid))
+    return { ok: false, error: "접근 권한이 없습니다." };
   return generateAbstractForDoc(docId);
 }

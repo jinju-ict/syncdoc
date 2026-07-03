@@ -72,9 +72,11 @@ export async function GET(
   const doc = repo.getDocument(docId);
   if (!doc) return new NextResponse("not found", { status: 404 });
 
+  // 접근 게이트 — 멤버만. 비멤버는 존재를 숨겨 404 (IDOR 방어).
+  const viewerRole = repo.requireDocAccess(docId, session.uid);
+  if (!viewerRole) return new NextResponse("not found", { status: 404 });
+
   const abstract = repo.getLatestAbstract(docId);
-  // 내보내는 사람 직군 기준으로 블록+댓글을 읽되, 번역 섹션은 전 직군을 따로 모은다
-  const viewerRole = repo.getDocProjectRole(docId, session.uid) ?? session.role;
   const blocks = repo.getTimeline(docId, viewerRole); // 블록 + 댓글 (번역 필드는 섹션②에서 별도 처리)
   const allTranslations = repo.listBlockTranslations(docId);
   const agreed = Boolean(doc.approvalPlannerAt && doc.approvalDeveloperAt);

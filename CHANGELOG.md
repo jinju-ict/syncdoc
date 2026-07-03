@@ -2,6 +2,22 @@
 
 SyncDoc 버전 히스토리. 형식은 [Keep a Changelog](https://keepachangelog.com/) 약식, 버전은 [SemVer](https://semver.org/).
 
+## [v0.4.0] — 2026-07-04
+
+보안 강화 + 문서 활동 감사. "남의 문서는 못 건드리고, 보관/해제는 티가 난다."
+
+### Security (배포 전 필수 수정)
+- **크로스 테넌트 IDOR 차단** — 문서(`/doc/*`)의 모든 읽기·쓰기 경로에 멤버십 게이트(`repo.requireDocAccess`) 적용. 비멤버는 존재를 숨겨 404. 그전엔 로그인한 누구나 `docId`를 바꿔 남의 백서·채팅을 열람/수정/보관할 수 있었다.
+- **첨부 파일 IDOR + 저장형 XSS 차단** — 파일 서빙에 멤버십 게이트 + 진짜 이미지(SVG 제외)만 `inline`, 그 외는 `attachment` + `X-Content-Type-Options: nosniff`. 업로드한 HTML/스크립트의 동일 출처 실행 방지.
+- **`SESSION_SECRET` 운영 필수화** — 프로덕션에서 미설정 시 세션 처리 시점에 즉시 실패(fail fast). 공개된 개발용 기본키로 세션을 위조하던 경로 차단. (빌드는 깨지지 않도록 지연 평가)
+
+### Added
+- **문서 보관/해제 활동 로그** — `doc_activity`(append-only) 테이블에 "누가·언제·무엇을(보관/해제)"을 영구 기록. 삭제·수정 불가. 새 `DocActivityBanner`가 문서 상단(대화·백서 두 렌즈)에 "🔓 다시 열림 · 이름 · 시각"과 전체 이력을 노출(한/EN/日). 몰래 다시 여는 행위를 추적.
+- **보관/해제 권한 분리** — 보관·해제 모두 **소유자·편집자만**(뷰어 차단). 서버 액션 거부 + 버튼 비노출(이중 방어). `repo.getDocPermission` 추가.
+
+### Tests
+- 자동 테스트 26 → **32**. 추가: 문서 접근 게이트(멤버/비멤버/레거시), 보관·해제 권한 판정, 활동 로그 append-only·최신순·중복 무기록.
+
 ## [v0.3.0] — 2026-06-16
 
 품질·정리 + 로드맵 1차. (`main`, 브랜치 `feat/chat-driven-whitepaper` 머지본)
@@ -36,6 +52,7 @@ SyncDoc 버전 히스토리. 형식은 [Keep a Changelog](https://keepachangelog
 
 MVP. 멀티 직군 프로젝트, 블록 에디터 백서, 4-렌즈, N직군×N언어 번역, 증류, 합의. (보존: 브랜치 `archive/v0.1.0`)
 
+[v0.4.0]: https://github.com/teo-baek/syncdoc/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/teo-baek/syncdoc/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/teo-baek/syncdoc/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/teo-baek/syncdoc/releases/tag/v0.1.0

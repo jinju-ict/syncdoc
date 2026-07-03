@@ -105,3 +105,105 @@ describe("소유자 가드 프리미티브", () => {
     expect(repo.isProjectOwner(projectId, editor)).toBe(false);
   });
 });
+
+describe("문서 접근 게이트 (requireDocAccess) — 크로스 테넌트 IDOR 방어", () => {
+  let aOwner: number, aOutsider: number, aProject: number, aDoc: number;
+  let legacyUser: number, legacyDoc: number;
+  beforeAll(() => {
+    aOwner = mkUser("aowner", "planner");
+    aOutsider = mkUser("aoutsider", "developer");
+    aProject = Number(
+      sqlite
+        .prepare("INSERT INTO projects (title, type, link_shared, created_by, created_at) VALUES ('A', 'project', 0, ?, '2026-01-01')")
+        .run(aOwner).lastInsertRowid
+    );
+    addMember(aProject, aOwner, "planner", "owner");
+    aDoc = Number(
+      sqlite
+        .prepare("INSERT INTO documents (title, project_id, created_at) VALUES ('AD', ?, '2026-01-01')")
+        .run(aProject).lastInsertRowid
+    );
+    // 레거시 문서 — project_id 없음(NULL)
+    legacyUser = mkUser("legacy", "planner");
+    legacyDoc = Number(
+      sqlite
+        .prepare("INSERT INTO documents (title, created_at) VALUES ('LD', '2026-01-01')")
+        .run().lastInsertRowid
+    );
+  });
+
+  it("멤버는 자기 직군을 얻는다", () => {
+    expect(repo.requireDocAccess(aDoc, aOwner)).toBe("planner");
+  });
+
+  it("비멤버는 null(거부) — 남의 프로젝트 문서 접근 차단", () => {
+    expect(repo.requireDocAccess(aDoc, aOutsider)).toBeNull();
+  });
+
+  it("레거시(프로젝트 없는) 문서는 계정 역할로 폴백한다", () => {
+    expect(repo.requireDocAccess(legacyDoc, legacyUser)).toBe("planner");
+  });
+});
+
+describe("보관/해제 권한 + 활동 로그 (getDocPermission / doc_activity)", () => {
+  let bOwner: number, bEditor: number, bViewer: number, bOutsider: number;
+  let bProject: number, bDoc: number, bLegacyDoc: number;
+  beforeAll(() => {
+    bOwner = mkUser("bowner", "planner");
+    bEditor = mkUser("beditor", "developer");
+    bViewer = mkUser("bviewer", "developer");
+    bOutsider = mkUser("boutsider", "developer");
+    bProject = Number(
+      sqlite
+        .prepare("INSERT INTO projects (title, type, link_shared, created_by, created_at) VALUES ('B', 'project', 0, ?, '2026-01-01')")
+        .run(bOwner).lastInsertRowid
+    );
+    addMember(bProject, bOwner, "planner", "owner");
+    addMember(bProject, bEditor, "developer", "editor");
+    addMember(bProject, bViewer, "designer", "viewer");
+    bDoc = Number(
+      sqlite
+        .prepare("INSERT INTO documents (title, project_id, created_at) VALUES ('BD', ?, '2026-01-01')")
+        .run(bProject).lastInsertRowid
+    );
+    bLegacyDoc = Number(
+      sqlite
+        .prepare("INSERT INTO documents (title, created_at) VALUES ('BLD', '2026-01-01')")
+        .run().lastInsertRowid
+    );
+  });
+
+  it("권한 판정 — 소유자/편집자/뷰어, 비멤버는 null, 레거시는 owner", () => {
+    expect(repo.getDocPermission(bDoc, bOwner)).toBe("owner");
+    expect(repo.getDocPermission(bDoc, bEditor)).toBe("editor");
+    expect(repo.getDocPermission(bDoc, bViewer)).toBe("viewer");
+    expect(repo.getDocPermission(bDoc, bOutsider)).toBeNull();
+    expect(repo.getDocPermission(bLegacyDoc, bOutsider)).toBe("owner");
+  });
+
+  it("보관→해제 시 활동이 append-only로 쌓이고 최신순으로 조회된다", () => {
+    expect(repo.listDocActivity(bDoc)).toHaveLength(0);
+    // 편집자가 보관
+    expect(repo.setDocumentArchived(bDoc, true, { id: bEditor, role: "developer" })).toBe(true);
+    // 소유자가 해제
+    expect(repo.setDocumentArchived(bDoc, false, { id: bOwner, role: "planner" })).toBe(true);
+
+    const log = repo.listDocActivity(bDoc);
+    expect(log).toHaveLength(2);
+    expect(log[0].action).toBe("unarchived"); // 최신순
+    expect(log[0].actorName).toContain("bowner");
+    expect(log[1].action).toBe("archived");
+    expect(log[1].actorName).toContain("beditor");
+  });
+
+  it("상태가 실제로 바뀌지 않으면(중복) 활동을 남기지 않는다", () => {
+    const doc2 = Number(
+      sqlite
+        .prepare("INSERT INTO documents (title, project_id, created_at) VALUES ('BD2', ?, '2026-01-01')")
+        .run(bProject).lastInsertRowid
+    );
+    // 이미 active인데 다시 해제 시도 → 변화 없음 → 로그 없음
+    expect(repo.setDocumentArchived(doc2, false, { id: bOwner, role: "planner" })).toBe(false);
+    expect(repo.listDocActivity(doc2)).toHaveLength(0);
+  });
+});

@@ -7,6 +7,7 @@ import AbstractHeader from "@/components/whitepaper/AbstractHeader";
 import ChatRoom from "@/components/chat/ChatRoom";
 import LevelSelector from "@/components/doc/LevelSelector";
 import ArchiveButton from "@/components/doc/ArchiveButton";
+import DocActivityBanner from "@/components/doc/DocActivityBanner";
 import WhitepaperReader from "@/components/whitepaper/WhitepaperReader";
 import DocLensShell from "@/components/doc/DocLensShell";
 import { CONTENT_SECTIONS } from "@/lib/sections";
@@ -61,9 +62,10 @@ export default async function DocPage({
   const doc = repo.getDocument(docId);
   if (!doc) notFound();
 
-  // 타임라인 = locked 블록만. draft는 작성자 본인 것만 별도 조회 (가시성 규칙).
-  // 뷰어 직군: 렌더링·번역은 4직군(멤버십), 합의 게이트는 2축(getDocRole).
-  const viewerProjectRole = repo.getDocProjectRole(docId, session.uid) ?? session.role;
+  // 접근 게이트 — 프로젝트 문서는 멤버만. 비멤버는 존재를 숨겨 404 (크로스 테넌트 IDOR 방어).
+  // 통과 시 반환 직군이 곧 뷰어 직군(렌더링·번역용, 멤버십 4직군).
+  const viewerProjectRole = repo.requireDocAccess(docId, session.uid);
+  if (!viewerProjectRole) notFound();
   const ctx = repo.getDocContext(docId); // 프로젝트 맥락(브레드크럼·종류)
   const kindLabel =
     ctx?.kind === "meeting" ? "회의록" : ctx?.kind === "release" ? "릴리스" : null;
@@ -107,6 +109,10 @@ export default async function DocPage({
   const canCurate = ctx?.projectId
     ? myProject?.myPerm === "owner" || myProject?.myPerm === "editor"
     : true;
+  // 보관/해제 권한 — 소유자·편집자만(뷰어 차단). 레거시 문서는 허용.
+  const canArchive = canCurate;
+  // 보관/해제 활동 이력 — "누가·언제 다시 열었는지" 배너로 노출(몰래 방지).
+  const activity = repo.listDocActivity(docId);
 
   const whitepaperMeta = {
     title: doc.title,
@@ -125,12 +131,7 @@ export default async function DocPage({
     // 채팅방(v0.2): 프로젝트당 하나의 통합 타임라인. 메신저형 입력.
     lensContent = (
       <div className="mx-auto w-full max-w-[760px]">
-        {archived && (
-          <div className="mb-6 rounded-md border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
-            📦 이 문서는 {doc.archivedAt ? doc.archivedAt.replace("T", " ").slice(0, 16) : ""}에
-            보관되었습니다. 모든 내용은 읽기 전용으로 보존됩니다.
-          </div>
-        )}
+        <DocActivityBanner activity={activity} archived={archived} lang={viewerLang} />
         <ChatRoom
           blocks={blocks}
           members={members}
@@ -153,6 +154,7 @@ export default async function DocPage({
     }
     lensContent = (
       <div>
+        <DocActivityBanner activity={activity} archived={archived} lang={viewerLang} />
         <AbstractHeader
           abstract={abstract}
           consensus={consensus}
@@ -237,7 +239,9 @@ export default async function DocPage({
               </svg>
               내보내기
             </a>
-            <ArchiveButton docId={docId} archived={archived} agreed={agreed} />
+            {canArchive && (
+              <ArchiveButton docId={docId} archived={archived} agreed={agreed} />
+            )}
             <LevelSelector docId={docId} level={myLevel} lang={viewerLang} />
             <span
               title={`${roleLabel[viewerProjectRole]} · ${session.username}`}
